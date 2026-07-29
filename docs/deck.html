@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MoonWalk: nanopayment rails on Arc</title>
+<style>
+  :root{--bg:#0a0c10;--ink:#eef2f7;--dim:#8d99ab;--edge:#1e2634;--go:#4ade80;--warn:#fbbf24;--accent:#a78bfa;--usdc:#2775ca}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,sans-serif}
+  section{min-height:100vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;padding:6vh 7vw;position:relative;border-bottom:1px solid var(--edge)}
+  h1{font-size:clamp(2.2rem,6vw,4rem);line-height:1.05;letter-spacing:-0.02em}
+  h2{font-size:clamp(1.5rem,3.4vw,2.4rem);line-height:1.15;margin-bottom:22px;letter-spacing:-0.01em}
+  p{font-size:clamp(1rem,1.5vw,1.25rem);max-width:62ch;color:#cfd8e3}
+  p+p{margin-top:14px}
+  .lead{color:var(--dim);font-size:clamp(1rem,1.6vw,1.3rem);margin-top:16px;max-width:60ch}
+  .num{color:var(--go);font-variant-numeric:tabular-nums}
+  .bad{color:var(--warn);font-variant-numeric:tabular-nums}
+  .grid{display:grid;gap:18px;margin-top:28px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .card{background:#111621;border:1px solid var(--edge);border-radius:14px;padding:20px}
+  .card h3{font-size:1rem;color:var(--accent);margin-bottom:8px;letter-spacing:0.02em}
+  .card p{font-size:0.98rem;max-width:none}
+  .stat{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:700;font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.82rem;word-break:break-all}
+  table{width:100%;border-collapse:collapse;margin-top:22px;font-size:0.88rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--edge)}
+  th{color:var(--dim);font-weight:600;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em}
+  td a{color:var(--accent);text-decoration:none}
+  .tag{position:absolute;top:4vh;left:7vw;color:var(--dim);font-size:0.78rem;letter-spacing:0.14em;text-transform:uppercase}
+  .foot{position:absolute;bottom:4vh;left:7vw;right:7vw;display:flex;justify-content:space-between;color:#5c6675;font-size:0.78rem}
+  ul{margin-top:18px;padding-left:22px;max-width:64ch}
+  li{margin-bottom:10px;color:#cfd8e3}
+  .pill{display:inline-block;border:1px solid var(--edge);border-radius:999px;padding:5px 12px;font-size:0.8rem;color:var(--dim);margin-right:8px}
+  @media print{
+    html,body{background:#fff;color:#000}
+    section{min-height:auto;height:100vh;page-break-after:always;border:0}
+    .card{border-color:#ccc;background:#f7f8fa}
+    p,li{color:#222}.lead{color:#555}.tag,.foot{color:#777}
+    td a{color:#333}
+  }
+</style>
+</head>
+<body>
+<section>
+  <span class="tag">Programmable Money Hackathon · Encode x Circle</span>
+  <h1>MoonWalk</h1>
+  <p class="lead">Nanopayment rails on Arc. One agent wallet, many people, each person's spend limit enforced by a contract.</p>
+  <div class="grid g3">
+    <div class="card"><h3>Live on</h3><p>Arc testnet, chain 5042002. Three contracts, deployed and in use.</p></div>
+    <div class="card"><h3>Surface</h3><p>A public Discord agent that decides what to buy and pays for it in USDC.</p></div>
+    <div class="card"><h3>Proof</h3><p>Every number here has a transaction hash in the repo.</p></div>
+  </div>
+  <div class="foot"><span>zkasuran</span><span>github.com/zkasuran/moonwalk</span></div>
+</section>
+
+<section>
+  <span class="tag">The problem</span>
+  <h2>A $0.001 payment costs $0.0019 to settle</h2>
+  <p>Metered agent payments break at the prices that make metering worth doing. On Arc, one x402 settlement of a $0.001 call used 87,145 gas, which is <span class="bad">$0.001873</span>. The fee is bigger than the payment.</p>
+  <p>So builders take one of two exits. Pay the fee anyway, or keep the meter in their own database and settle later. The second means every user trusts the operator's arithmetic.</p>
+  <div class="grid g2">
+    <div class="card"><h3>And it gets worse in a group</h3><p>A shared assistant has one wallet and many people behind it. The chain sees one payer. So a per-person limit can only live in the operator's backend, where it is a promise, not a rule.</p></div>
+    <div class="card"><h3>What the field does</h3><p>38 projects in this hackathon claim spend caps. Five claim them on-chain. Every one of them caps a single owner's budget.</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="tag">Idea one</span>
+  <h2>Sign a cumulative total, settle the batch</h2>
+  <p>The payer funds a channel once with an EIP-3009 <span class="mono">receiveWithAuthorization</span>: no approve, no gas, no transaction, just a signature. Every call after that costs one EIP-712 voucher carrying a running total for one subject. The service keeps the newest voucher and redeems a batch in a single transfer.</p>
+  <div class="grid g3">
+    <div class="card"><h3>Per call, alone</h3><div class="stat bad">$0.001873</div><p>87,145 gas, one transaction per call</p></div>
+    <div class="card"><h3>Per call, batched</h3><div class="stat num">$0.000219</div><p>30 calls in one transaction, 262,639 gas</p></div>
+    <div class="card"><h3>Break-even</h3><div class="stat">4 calls</div><p>Above that the channel is cheaper, and the gap grows</p></div>
+  </div>
+  <p class="lead">A replayed voucher pays nothing, because the contract stores the highest total settled and pays only the difference. A lost voucher costs nothing either.</p>
+</section>
+
+<section>
+  <span class="tag">Idea two</span>
+  <h2>Put the limit in consensus, not in the app</h2>
+  <p>A subject is <span class="mono">keccak256("discord:&lt;guildId&gt;:&lt;userId&gt;")</span>. Each person in a shared room gets their own cap in the SpendGuard contract while the agent keeps spending from one wallet.</p>
+  <p>The channel asks the guard on every redeem. A voucher over someone's cap cannot be redeemed by anyone, including us. In the live run, a voucher $0.001 over a $0.005 cap came back as <span class="mono">CapExceeded</span>, from the chain, not from our backend.</p>
+  <div class="grid g2">
+    <div class="card"><h3>Who can change a cap</h3><p>The cap owner, which can be delegated away from the payer. A Discord admin sets a member's cap with <span class="mono">/cap</span> and the change lands in the contract.</p></div>
+    <div class="card"><h3>What a cap cannot do</h3><p>Authorize spending. Caps only restrict. Every payment still needs the payer's own signature, so delegating cap administration is safe.</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="tag">Evidence</span>
+  <h2>Every claim has a transaction</h2>
+  <table>
+    <tr><th>What</th><th>Result</th><th>Transaction</th></tr>
+    <tr><td>Channel opened by a signature alone</td><td>$0.20 deposit, payer sent nothing</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0x9923effffcc65964c0998a1ec7abe9a033776af80c6103bb0fe02c5f3fd9ded5">0x9923efff…</a></td></tr>
+    <tr><td>30 metered calls redeemed</td><td>$0.03 in one transfer, 262,639 gas</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a">0xb779492a…</a></td></tr>
+    <tr><td>Voucher over a cap</td><td><span class="mono">CapExceeded</span>, refused before any transaction</td><td>no transaction to show</td></tr>
+    <tr><td>Closed with both signatures</td><td>$0.17 returned, submitted by the service</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0x622b3619ab023019c422ac1e158bbc14923e8e03a484ee50ba1cb4df9e8e4c4f">0x622b3619…</a></td></tr>
+    <tr><td>Through the running API, two users</td><td>6 calls, one settlement, per-person totals matched</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0xfda3b8a972b2161cc637a748dbbf2017be08715a31b92131b5b91425221a67a6">0xfda3b8a9…</a></td></tr>
+  </table>
+  <div class="grid g3">
+    <div class="card"><h3>Payer transactions sent</h3><div class="stat num">0</div><p>Before and after every run</p></div>
+    <div class="card"><h3>Tests</h3><div class="stat">51 + 151</div><p>Foundry and pytest, mypy strict clean</p></div>
+    <div class="card"><h3>Contracts live</h3><div class="stat">3</div><p>Channel, guard, registry</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="tag">The claim</span>
+  <h2>The only entry where one wallet serves a room</h2>
+  <p>Scanned all 1073 projects in this hackathon. Plenty batch payments. Plenty cap an agent. All 13 chat-surface projects chose Telegram or WhatsApp, where every user has their own wallet, so the problem never appears.</p>
+  <p>MoonWalk is the one where a single agent wallet serves many distinct humans in a shared room and each person's limit is enforced by a contract rather than by the backend.</p>
+  <div class="grid g2">
+    <div class="card"><h3>Honest about the overlap</h3><p>Circle Gateway Nanopayments nets a payer's outflows too. It meters a payer, not the many people behind one payer, and it needs a deposit into Circle's contract with a TEE computing batches. Our deposit sits in a contract whose source is in the repo. The 402 can offer both and let the agent choose.</p></div>
+    <div class="card"><h3>Honest about the limits</h3><p>Testnet only, since Arc mainnet is not live. The channel nets one payer to one service. The service holds the vouchers, so losing them costs the service what it has not collected yet, and it recovers the rest from chain state.</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="tag">Next</span>
+  <h2>What we would build with the accelerator</h2>
+  <ul>
+    <li>Settle on a schedule as well as a threshold, so a service can choose its own counterparty risk.</li>
+    <li>Multilateral netting, so services paying each other inside one settlement stop being a special case.</li>
+    <li>A public meter page, so a member can audit their own spend without asking the operator.</li>
+    <li>The same rails behind Slack and Telegram, since the subject is a hash of platform, room and person rather than an address.</li>
+  </ul>
+  <div class="grid g3">
+    <div class="card"><h3>NanoChannel</h3><p class="mono">0x3e2dE84eD534E39241682957d617ed761892D568</p></div>
+    <div class="card"><h3>SpendGuard</h3><p class="mono">0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b</p></div>
+    <div class="card"><h3>ServiceRegistry</h3><p class="mono">0x774E5F27b572450F5D21FE3929B45557F3468F9b</p></div>
+  </div>
+  <div class="foot"><span>github.com/zkasuran/moonwalk</span><span>zkasuran.github.io/moonwalk</span></div>
+</section>
+
+
+</body>
+</html>
