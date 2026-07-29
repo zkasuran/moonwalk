@@ -165,6 +165,34 @@ class ChannelRail:
     def _outstanding_onchain(self) -> int:
         return self._cached("outstanding", lambda: self.chain.outstanding(self.channel_id))
 
+    def _subject_redeemed_onchain(self, subject: bytes) -> int:
+        return self._cached(
+            f"redeemed:{subject.hex()}",
+            lambda: self.chain.subject_redeemed(self.channel_id, subject),
+        )
+
+    async def _ledger(
+        self, subject: bytes, subject_hex: str, guild_id: str = "", user_id: str = ""
+    ) -> tuple[int, int]:
+        """This subject's (cumulative, settled), with the chain as the floor.
+
+        A service that loses its database would otherwise start counting from zero
+        and sign vouchers the contract rejects as stale. Taking the contract's
+        subjectRedeemed as a floor makes the ledger recover from chain state, and
+        writes the correction back so the next call is cheap.
+        """
+        meter = await self.store.get_meter(self.channel_id_hex, subject_hex)
+        floor = self._subject_redeemed_onchain(subject)
+        cumulative = max(meter.cumulative_atomic if meter else 0, floor)
+        settled = max(meter.settled_atomic if meter else 0, floor)
+        stale = meter is None or meter.cumulative_atomic < floor or meter.settled_atomic < floor
+        if stale and floor > 0:
+            logger.info("adopting on-chain floor %s for subject %s", floor, subject_hex[:14])
+            await self.store.seed_meter(
+                self.channel_id_hex, subject_hex, guild_id, user_id, cumulative, settled
+            )
+        return cumulative, settled
+
     def invalidate(self) -> None:
         self._cache.clear()
 
@@ -177,13 +205,13 @@ class ChannelRail:
         never has to remember where it got to.
         """
         subject = discord_subject(guild_id, user_id)
-        meter = await self.store.get_meter(self.channel_id_hex, "0x" + subject.hex())
-        current = meter.cumulative_atomic if meter else 0
-        unsettled = meter.unsettled_atomic if meter else 0
+        subject_hex = "0x" + subject.hex()
+        current, settled = await self._ledger(subject, subject_hex, guild_id, user_id)
+        unsettled = max(0, current - settled)
         cap_left = max(0, self._cap_remaining_onchain(subject) - unsettled)
         return ChannelQuote(
             channel_id=self.channel_id_hex,
-            subject="0x" + subject.hex(),
+            subject=subject_hex,
             cumulative=current + price_atomic,
             valid_before=int(time.time()) + chain_config.VOUCHER_TTL_SECONDS,
             price_atomic=price_atomic,
@@ -217,9 +245,8 @@ class ChannelRail:
                 False, f"voucher signed by {signer}, not the channel payer", subject_hex
             )
 
-        meter = await self.store.get_meter(self.channel_id_hex, subject_hex)
-        current = meter.cumulative_atomic if meter else 0
-        unsettled = meter.unsettled_atomic if meter else 0
+        current, settled = await self._ledger(subject, subject_hex, guild_id, user_id)
+        unsettled = max(0, current - settled)
         expected = current + price_atomic
         if voucher.cumulative != expected:
             return MeterOutcome(

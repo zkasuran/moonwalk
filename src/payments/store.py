@@ -373,6 +373,41 @@ class PaymentStore:
         assert meter is not None  # just written
         return meter
 
+    async def seed_meter(
+        self,
+        channel_id: str,
+        subject: str,
+        guild_id: str,
+        user_id: str,
+        cumulative_atomic: int,
+        settled_atomic: int,
+    ) -> None:
+        """Adopt on-chain truth for a subject without counting a call.
+
+        Used when the contract says more has been settled than this store knows,
+        which is what a fresh service instance sees after losing its database. The
+        chain is the floor, so the service can never re-collect what it already
+        collected or issue a voucher the contract would reject as stale.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self._path) as db:
+            await db.execute(
+                """
+                INSERT INTO channel_meters (
+                    channel_id, subject, guild_id, user_id,
+                    cumulative_atomic, settled_atomic, calls, voucher_json, updated_at
+                ) VALUES (?,?,?,?,?,?,0,'',?)
+                ON CONFLICT(channel_id, subject) DO UPDATE SET
+                    cumulative_atomic =
+                        MAX(excluded.cumulative_atomic, channel_meters.cumulative_atomic),
+                    settled_atomic =
+                        MAX(excluded.settled_atomic, channel_meters.settled_atomic),
+                    updated_at = excluded.updated_at
+                """,
+                (channel_id, subject, guild_id, user_id, cumulative_atomic, settled_atomic, now),
+            )
+            await db.commit()
+
     async def get_meter(self, channel_id: str, subject: str) -> ChannelMeter | None:
         async with aiosqlite.connect(self._path) as db:
             db.row_factory = aiosqlite.Row

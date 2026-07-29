@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    name: contracts (forge)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: build
+        working-directory: contracts
+        run: forge build --sizes
+      - name: test
+        working-directory: contracts
+        run: forge test -vv
+      - name: committed ABIs match the compiled contracts
+        # The runtime reads src/chain/abis/, not the forge output, so a contract
+        # change that skips `make abis` would ship a stale ABI. Fail loudly here.
+        run: |
+          for n in NanoChannel SpendGuard ServiceRegistry; do
+            jq -S '.abi' "contracts/out/$n.sol/$n.json" > "/tmp/$n.fresh.json"
+            jq -S '.' "src/chain/abis/$n.json" > "/tmp/$n.committed.json"
+            if ! diff -q "/tmp/$n.fresh.json" "/tmp/$n.committed.json" > /dev/null; then
+              echo "::error::src/chain/abis/$n.json is stale, run 'make abis' and commit"
+              diff "/tmp/$n.committed.json" "/tmp/$n.fresh.json" | head -40
+              exit 1
+            fi
+            echo "$n abi in sync"
+          done
+
+  python:
+    name: python (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: install
+        run: uv venv && uv pip install -e ".[dev]"
+      - name: lint
+        run: |
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+      - name: types
+        run: uv run mypy src/
+      - name: tests
+        # Every test runs offline. Anything that needs Arc lives in scripts/.
+        run: uv run pytest -q

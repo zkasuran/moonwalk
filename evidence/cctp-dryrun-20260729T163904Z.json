@@ -1,0 +1,61 @@
+{
+  "mode": "dry-run",
+  "timestamp": "20260729T163904Z",
+  "iris": "https://iris-api-sandbox.circle.com",
+  "route": {
+    "sourceDomain": {
+      "expected": 0,
+      "onchain": 0
+    },
+    "destinationDomain": {
+      "expected": 26,
+      "onchain": 26
+    },
+    "destinationLocalToken": "0x3600000000000000000000000000000000000000",
+    "ok": true
+  },
+  "plan": {
+    "source": "eth-sepolia",
+    "sourceDomain": 0,
+    "destination": "arc-testnet",
+    "destinationDomain": 26,
+    "sender": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "recipient": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "thresholdAtomic": 10000000,
+    "destinationBalanceAtomic": 207454284,
+    "sourceBalanceAtomic": 0,
+    "deficitAtomic": 0,
+    "amountAtomic": 0,
+    "maxFeeAtomic": 1,
+    "feeBps": 1.0,
+    "finalityThreshold": 1000,
+    "allowanceAtomic": 0,
+    "needed": false,
+    "funded": true,
+    "needsApproval": false,
+    "minimumReceivedAtomic": -1,
+    "calls": [
+      {
+        "label": "depositForBurn",
+        "chain": "eth-sepolia",
+        "to": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "function": "depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)",
+        "selector": "0x8e0250ee",
+        "args": {
+          "amount": "0",
+          "destinationDomain": "26",
+          "mintRecipient": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+          "burnToken": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+          "destinationCaller": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "maxFee": "1",
+          "minFinalityThreshold": "1000"
+        },
+        "calldata": "0x8e0250ee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001a000000000000000000000000db6c6340342e71a63cd11ebac2185204b77777770000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c72380000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000003e8"
+      }
+    ]
+  },
+  "sourceGasWei": 211960007022204638,
+  "blockers": [
+    "destination is already above the threshold, pass --force to bridge"
+  ]
+}

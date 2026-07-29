@@ -1,0 +1,66 @@
+{
+  "api": "http://127.0.0.1:8413",
+  "calls": [
+    {
+      "user": "900000000000000001",
+      "cumulativeAtomic": 5000,
+      "callsOnChannel": 1,
+      "rail": "nanochannel"
+    },
+    {
+      "user": "900000000000000001",
+      "cumulativeAtomic": 6000,
+      "callsOnChannel": 2,
+      "rail": "nanochannel"
+    },
+    {
+      "user": "900000000000000001",
+      "cumulativeAtomic": 7000,
+      "callsOnChannel": 3,
+      "rail": "nanochannel"
+    },
+    {
+      "user": "900000000000000001",
+      "cumulativeAtomic": 8000,
+      "callsOnChannel": 4,
+      "rail": "nanochannel"
+    },
+    {
+      "user": "900000000000000002",
+      "cumulativeAtomic": 3000,
+      "callsOnChannel": 1,
+      "rail": "nanochannel"
+    },
+    {
+      "user": "900000000000000002",
+      "cumulativeAtomic": 4000,
+      "callsOnChannel": 2,
+      "rail": "nanochannel"
+    }
+  ],
+  "network": "arc-testnet",
+  "settlement": {
+    "settled": true,
+    "txHash": "0x2da9fe56594be956ba17e0cfc315da70c8356e1fb48236e546014a97e48d655e",
+    "url": "https://testnet.arcscan.app/tx/0x2da9fe56594be956ba17e0cfc315da70c8356e1fb48236e546014a97e48d655e",
+    "totalAtomic": 6000,
+    "calls": 6,
+    "subjects": 2,
+    "block": 54284298,
+    "gasFeeAtomic": 3441
+  },
+  "onchainPerSubject": {
+    "900000000000000001": 8000,
+    "900000000000000002": 4000
+  },
+  "after": {
+    "payer": "0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4",
+    "service": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "depositAtomic": 500000,
+    "redeemedAtomic": 12000,
+    "outstandingAtomic": 488000,
+    "guarded": true,
+    "closing": false,
+    "settled": false
+  }
+}
