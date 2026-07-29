@@ -76,10 +76,21 @@ async def test_answer_free_applies_nanopay_persona(monkeypatch: pytest.MonkeyPat
         captured["system"] = system
         return "I am the NanoPay agent."
 
+    # answer_free asks llm.available() first, and that reads the environment. Stub
+    # it too, otherwise this test passes only on a machine with an API key set.
+    monkeypatch.setattr(planner.llm, "available", lambda: True)
     monkeypatch.setattr(planner.llm, "chat", fake_chat)
     out = await planner.answer_free("what are you?")
     assert out == "I am the NanoPay agent."
     assert captured["system"] and "NanoPay" in captured["system"]
+
+
+async def test_answer_free_says_so_when_no_model_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(planner.llm, "available", lambda: False)
+    out = await planner.answer_free("what are you?")
+    assert "unavailable" in out.lower()
 
 
 def test_tool_catalog_lookup() -> None:
