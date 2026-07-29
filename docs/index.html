@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>NanoPay: the agent that pays its own way on Arc</title>
-<meta name="description" content="NanoPay is an autonomous Discord agent with its own USDC wallet. It decides when to buy live data, pays for it over x402 on Arc in under a second, and hands you the answer plus the on-chain receipt." />
+<title>MoonWalk: nanopayment rails for agent commerce on Arc</title>
+<meta name="description" content="MoonWalk is a USDC payment channel plus per-person spend caps enforced on-chain, built on Arc. Thirty metered calls settle in one transaction and the payer never sends one." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -214,49 +214,118 @@
     header.hero { padding: 56px 0 20px; }
     body { font-size: 16px; }
   }
+  /* ---- contracts panel ---- */
+  .cgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cbox { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: var(--card); box-shadow: var(--shadow); }
+  .cbox h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 19px; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .cbox p { color: var(--muted); font-size: 14.5px; margin-bottom: 14px; }
+  .cbox .addr { display: block; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; word-break: break-all; color: var(--green); text-decoration: none; border-bottom: 1px solid var(--green-line); padding-bottom: 3px; }
+  .cbox .addr:hover { color: var(--green-bright); }
+  .cbox .meta { margin-top: 12px; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--faint); }
+  .cbox .meta a { color: var(--muted); }
+  .compiler { margin-top: 20px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
+
+  /* ---- live channel panel ---- */
+  .panel { border: 1px solid var(--line2); border-radius: 16px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+  .panel .phead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 22px; border-bottom: 1px solid var(--line); background: #fcfcfa; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); }
+  .stat { background: var(--card); padding: 20px 22px; }
+  .stat .k { font-size: 12px; color: var(--faint); font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .v { font-family: "Fraunces", serif; font-size: 30px; font-weight: 600; color: var(--ink); line-height: 1.1; margin-top: 6px; }
+  .stat .v.g { color: var(--green); }
+  .stat .n { font-size: 12.5px; color: var(--faint); margin-top: 4px; }
+  .prow { display: grid; grid-template-columns: 1.7fr 0.7fr 1fr 1fr; gap: 12px; padding: 13px 22px; border-bottom: 1px solid var(--line); font-size: 14px; align-items: center; }
+  .prow:last-child { border-bottom: none; }
+  .prow.h { background: #fcfcfa; color: var(--faint); font-family: "IBM Plex Mono", monospace; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .prow .who { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted); word-break: break-all; }
+  .notice { padding: 22px; color: var(--muted); font-size: 15px; }
+  .notice b { color: var(--ink); }
+  .notice .why { display: block; margin-top: 7px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--faint); word-break: break-all; }
+
+  @media (max-width: 720px) {
+    .cgrid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .prow { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>
 
 <nav>
   <div class="wrap row">
-    <div class="brand"><span class="dot"></span>NanoPay</div>
+    <div class="brand"><span class="dot"></span>MoonWalk</div>
     <div class="nav-links">
+      <a href="#contracts" class="hide">Contracts</a>
       <a href="#try" class="hide">Try it</a>
       <a href="#how" class="hide">How it works</a>
       <a href="#proof" class="hide">On-chain proof</a>
-      <a class="btn btn-ghost" href="https://github.com/zkasuran/lepton-discord" target="_blank" rel="noopener">GitHub</a>
+      <a href="#channel" class="hide">Live channel</a>
+      <a class="btn btn-ghost" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap">
-    <span class="tag reveal d1"><span class="dot" style="width:7px;height:7px;box-shadow:none"></span>Live on Arc testnet · settles in under a second</span>
-    <h1 class="reveal d2">The agent that<br /><span class="accent">pays its own way.</span></h1>
-    <p class="lede reveal d3">NanoPay is an autonomous agent with its own USDC wallet. Ask it anything in Discord. It decides whether it needs live data, <b>pays for it over x402 on Arc</b> from its own wallet, and hands you the answer plus the on-chain receipt. <b>No wallet, no signing, no human in the loop.</b></p>
+    <span class="tag reveal d1"><span class="dot" style="width:7px;height:7px;box-shadow:none"></span>Live on Arc testnet · chain 5042002 · three contracts deployed</span>
+    <h1 class="reveal d2">Nanopayments that cost<br /><span class="accent">less than the call.</span></h1>
+    <p class="lede reveal d3">Settling a $0.001 call on Arc costs <b>$0.001873</b> in gas. MoonWalk is the payment channel that fixes it: one signed voucher a call, then the whole batch redeemed in <b>one transaction</b>. Thirty calls for $0.006565, so <b>$0.000219 a call</b>. Each person also gets a spend cap held in the contract, so one agent can serve a whole channel of people without anyone trusting the operator.</p>
     <div class="cta-row reveal d4">
-      <a class="btn btn-primary" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add NanoPay to Discord</a>
-      <a class="btn btn-ghost" href="#try">See it pay live ↓</a>
-      <span class="cta-note">RFB-1 · Autonomous Paying Agents</span>
+      <a class="btn btn-primary" href="#contracts">See the live contracts ↓</a>
+      <a class="btn btn-ghost" href="https://discord.gg/JST4tjKWz" target="_blank" rel="noopener">Try the agent in Discord</a>
+      <span class="cta-note">Encode × Circle Programmable Money</span>
     </div>
 
     <div class="card-console reveal d5">
       <div class="cc-bar">
         <span class="lamp"></span><span class="lamp"></span><span class="lamp g"></span>
-        <span class="cc-title">nanopay · #general · Arc</span>
+        <span class="cc-title">moonwalk · channel · Arc testnet</span>
       </div>
       <div class="cc-body" id="heroTerm"></div>
     </div>
   </div>
 </header>
 
+<!-- CONTRACTS -->
+<section id="contracts">
+  <div class="wrap">
+    <div class="eyebrow">Deployed, not described</div>
+    <h2>Three contracts, live on Arc.</h2>
+    <p class="sub">Deployed 2026-07-29 to Arc testnet from <span class="mono" style="color:var(--muted)">contracts/script/Deploy.s.sol</span>. Click an address to read it on Arcscan.</p>
+    <div class="cgrid">
+      <div class="cbox">
+        <h3>NanoChannel</h3>
+        <p>The unidirectional USDC channel. Funded by a signed EIP-3009 authorization, metered by cumulative vouchers, settled in batches, closed by either side.</p>
+        <a class="addr" href="https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568" target="_blank" rel="noopener">0x3e2dE84eD534E39241682957d617ed761892D568 ↗</a>
+        <div class="meta">deploy <a href="https://testnet.arcscan.app/tx/0x5a96809fbd4cd2ab32eaff36d24234916ad2ad643832517e2ac633f8a9ac1833" target="_blank" rel="noopener">5a96809f ↗</a> · 30 forge tests</div>
+      </div>
+      <div class="cbox">
+        <h3>SpendGuard</h3>
+        <p>Per-person spend caps, lifetime or windowed, with a scope default and per-subject overrides. Unconfigured means zero, so it fails closed.</p>
+        <a class="addr" href="https://testnet.arcscan.app/address/0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b" target="_blank" rel="noopener">0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b ↗</a>
+        <div class="meta">deploy <a href="https://testnet.arcscan.app/tx/0xda0a5e42fabc28725fc374cf02825a1eac7e54a77dee2e854fcb73c59010f1b0" target="_blank" rel="noopener">da0a5e42 ↗</a> · 10 forge tests</div>
+      </div>
+      <div class="cbox">
+        <h3>ServiceRegistry</h3>
+        <p>A namespaced priced catalog of machine-callable services. Anyone lists. A namespace admin verifies. Any price change drops the verification.</p>
+        <a class="addr" href="https://testnet.arcscan.app/address/0x774E5F27b572450F5D21FE3929B45557F3468F9b" target="_blank" rel="noopener">0x774E5F27b572450F5D21FE3929B45557F3468F9b ↗</a>
+        <div class="meta">deploy <a href="https://testnet.arcscan.app/tx/0xd201aaebfc6c85d909a43cfb08626c481a5dd5249869873dcfc16437c98247d3" target="_blank" rel="noopener">d201aaeb ↗</a> · 11 forge tests</div>
+      </div>
+    </div>
+    <div class="compiler">
+      solc 0.8.24 · evm_version paris · optimizer on, 200 runs · chain 5042002<br />
+      USDC <a href="https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000" target="_blank" rel="noopener" style="color:var(--muted)">0x3600…0000</a>, 6 decimals, EIP-712 domain name "USDC" version "2"<br />
+      51 forge tests pass, 126 pytest tests pass, mypy and ruff clean
+    </div>
+  </div>
+</section>
+
 <!-- TRY IT -->
 <section id="try" class="alt">
   <div class="wrap">
     <div class="eyebrow">Try it now</div>
     <h2>Ask the agent. Watch it spend.</h2>
-    <p class="sub">Type a question. If it needs live data, NanoPay pays a sub-cent USDC toll on Arc and answers with a real receipt. <span id="modeLine" style="color:var(--faint)"></span></p>
+    <p class="sub">NanoPay is the agent surface and it runs on these rails. Type a question. If it needs live data it pays a sub-cent USDC toll on Arc and answers with a real receipt. It prefers the channel when the service offers one and falls back to per-call x402. <span id="modeLine" style="color:var(--faint)"></span></p>
 
     <div class="card-console">
       <div class="cc-bar">
@@ -267,7 +336,7 @@
       </div>
       <div class="cc-body">
         <div id="tryOut">
-          <div class="line"><span class="sys">Ask a question and the agent decides: buy live data, or answer for free.</span></div>
+          <div class="line"><span class="sys">Ask a question and the agent decides: buy live data or answer for free.</span></div>
         </div>
         <form class="ask-form" id="askForm" autocomplete="off">
           <input id="askInput" placeholder="what's BTC doing right now?" maxlength="240" />
@@ -302,24 +371,24 @@
 <!-- HOW -->
 <section id="how">
   <div class="wrap">
-    <div class="eyebrow">The loop</div>
-    <h2>Decide → pay → answer.</h2>
-    <p class="sub">The agent's reasoning is free. It only spends USDC on the external tools it decides are worth buying, and never past your budget.</p>
+    <div class="eyebrow">The lifecycle</div>
+    <h2>Sign → check → settle.</h2>
+    <p class="sub">One endpoint offers both rails. The 402 carries the x402 requirements in <span class="mono" style="color:var(--muted)">PAYMENT-REQUIRED</span> and the channel offer in <span class="mono" style="color:var(--muted)">X-CHANNEL-REQUIRED</span>. The caller picks by which header it sends back.</p>
     <div class="steps">
       <div class="step">
-        <div class="n">01 · DECIDE</div>
-        <h3>It reasons over price</h3>
-        <p>Given your question and a priced tool catalog, the agent picks the single cheapest tool that helps, or answers for free. Over-budget spends are declined in code, not left to the model.</p>
+        <div class="n">01 · SIGN</div>
+        <h3>A voucher, not a transaction</h3>
+        <p>The payer funds the channel once with a signed EIP-3009 authorization, then signs one EIP-712 voucher per call. A voucher is a cumulative total for one person, so the newest one supersedes every earlier one and a lost voucher costs nothing.</p>
       </div>
       <div class="step">
-        <div class="n">02 · PAY</div>
-        <h3>It signs, never gasses</h3>
-        <p>It signs an EIP-3009 authorization from its own wallet (USDC only, no gas). A facilitator settles <span class="mono" style="color:var(--muted)">transferWithAuthorization</span> on Arc in under 500ms and pays the gas.</p>
+        <div class="n">02 · CHECK</div>
+        <h3>Against the contract, not a config</h3>
+        <p>Before the work happens the service checks the signature, the cumulative and that person's SpendGuard cap. It reads the cap from the contract, so refusing a call and failing to redeem it can never disagree.</p>
       </div>
       <div class="step">
-        <div class="n">03 · ANSWER</div>
-        <h3>It hands you a receipt</h3>
-        <p>Real data comes back (CoinGecko, Open-Meteo, Google News), the agent composes the answer, and posts it with a clickable Arc receipt. Its own on-chain tx count stays <span class="ok mono">0</span>.</p>
+        <div class="n">03 · SETTLE</div>
+        <h3>One transaction, every call</h3>
+        <p>Once enough has accrued the service calls <span class="mono" style="color:var(--muted)">redeem</span> with the newest voucher per person. One transaction, one USDC transfer, every call since the last redeem. The payer's own tx count stays <span class="ok mono">0</span>.</p>
       </div>
     </div>
   </div>
@@ -330,11 +399,55 @@
   <div class="wrap">
     <div class="eyebrow">Provable, not claimed</div>
     <h2>Real USDC, moving on Arc.</h2>
-    <p class="sub">Every answer that needs data is a real settlement between two distinct wallets. Confirmed on-chain, status 1. Click any hash.</p>
+    <p class="sub">Two rails, both proven on-chain. Below is one full run of the channel lifecycle, then the per-call x402 settlements the agent has made in Discord. Every receipt is status 1. Click any hash.</p>
+    <div class="proof" style="margin-bottom:20px">
+      <div class="head">
+        <span>the channel lifecycle · one run of <span class="mono" style="color:var(--muted)">scripts/channel_demo.py</span> · 2026-07-29</span>
+        <span>amounts are the gas fee, paid by the service in USDC</span>
+      </div>
+      <div class="row-tx">
+        <span class="what">open · EIP-3009 deposit, no payer tx</span>
+        <span class="res">$0.20 funded, 218,926 gas</span>
+        <span class="amt">−$0.005473</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x9923effffcc65964c0998a1ec7abe9a033776af80c6103bb0fe02c5f3fd9ded5" target="_blank" rel="noopener">9923efff ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">caps · default $0.005 for anyone</span>
+        <span class="res">set in SpendGuard, 71,829 gas</span>
+        <span class="amt">−$0.001795</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x030f5352856ed5cb57c75445952aa89b6744f94f6705d74423d7b43ca9881673" target="_blank" rel="noopener">030f5352 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">caps · alice raised to $0.06</span>
+        <span class="res">per-person override, 72,788 gas</span>
+        <span class="amt">−$0.001819</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xd0e2bc33a606d8545aefb2ceba5bbcac5c2011857e0198ac02b67a97e792ba28" target="_blank" rel="noopener">d0e2bc33 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx" style="background:var(--green-soft)">
+        <span class="what"><b>redeem · 30 calls in ONE transaction</b></span>
+        <span class="res">$0.03 settled from 2 vouchers, 262,639 gas</span>
+        <span class="amt">−$0.006565</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a" target="_blank" rel="noopener">b779492a ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">cap refusal · a voucher $0.001 over the cap</span>
+        <span class="res">reverted <span class="mono">CapExceeded</span>, so nobody can redeem it</span>
+        <span class="amt">$0.000000</span>
+        <span><span class="amber">no tx possible</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">closeMutual · both signatures, service submits</span>
+        <span class="res">$0.17 refunded to the payer, 81,277 gas</span>
+        <span class="amt">−$0.002031</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x622b3619ab023019c422ac1e158bbc14923e8e03a484ee50ba1cb4df9e8e4c4f" target="_blank" rel="noopener">622b3619 ↗</a> <span class="st">✓</span></span>
+      </div>
+    </div>
+    <p class="sub" style="margin-bottom:34px;font-size:15.5px">Payer <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> went from 9.788000 to 9.758000 USDC, exactly the $0.03 that was metered. Its transaction count was <b>0 before and 0 after</b>. Thirty paid calls, a deposit, a batch settlement and a close, with nothing sent from the payer. The 30 vouchers were also hashed locally and checked against the contract's own <span class="mono">voucherHash</span> view before the batch went out.</p>
+
     <div class="proof">
       <div class="head">
-        <span>agent <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> → service <span class="mono" style="color:var(--muted)">0xDB6c…7777</span></span>
-        <span>Arc testnet · chainId 5042002</span>
+        <span>the per-call x402 rail · agent <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> → service <span class="mono" style="color:var(--muted)">0xDB6c…7777</span></span>
+        <span>87,133 to 87,165 gas each · one transaction per call</span>
       </div>
       <!-- Live settlements load here from /settlements; these five stay as an
            offline fallback until the fetch replaces them. -->
@@ -374,33 +487,49 @@
   </div>
 </section>
 
+<!-- LIVE CHANNEL -->
+<section id="channel">
+  <div class="wrap">
+    <div class="eyebrow">Read live from the service</div>
+    <h2>The channel that is open right now.</h2>
+    <p class="sub">This panel calls <span class="mono" style="color:var(--muted)">GET /channel</span> on the same API the Ask box uses: the on-chain deposit, what each person has metered off-chain and the cap the contract is holding them to. Every number here comes from that response. If the fetch fails the panel says so rather than showing a figure.</p>
+    <div class="panel">
+      <div class="phead">
+        <span id="chanId">channel: reading…</span>
+        <span class="status-pill" id="chanPill">fetching</span>
+      </div>
+      <div class="notice" id="chanBody">Asking the service for the channel state.</div>
+    </div>
+  </div>
+</section>
+
 <!-- WHY -->
 <section id="why">
   <div class="wrap">
-    <div class="eyebrow">The empty quadrant</div>
-    <h2>The payer, where the users are.</h2>
-    <p class="sub">Buyer-side agents on Arc are appearing, but they run one user at a time behind a web page. NanoPay is the only autonomous payer inside a shared social channel.</p>
+    <div class="eyebrow">The two ideas</div>
+    <h2>Cheap enough to meter. Bounded per person.</h2>
+    <p class="sub">Both figures below are measured on Arc testnet receipts, linked above. Neither is a projection.</p>
     <div class="split">
       <div class="card">
-        <span class="big">0</span>
-        <h3>on-chain transactions from the agent</h3>
-        <p>It paid every time and never sent a transaction. EIP-3009 lets it sign off-chain while the facilitator broadcasts and pays gas. That is the cleanest possible proof of an autonomous payer: it needs USDC, nothing else.</p>
+        <span class="big">$0.000219</span>
+        <h3>to settle one $0.001 call</h3>
+        <p>Thirty calls redeemed in one transaction cost $0.006565 in gas. On the per-call rail the same call costs $0.001873 to settle, which is nearly twice the price of the thing being bought. The payer's transaction count over the whole run: <span class="ok mono">0</span>.</p>
       </div>
       <div class="card">
-        <span class="big">N&nbsp;users, 1&nbsp;agent</span>
-        <h3>per-user budgets in a shared channel</h3>
-        <p>Spend governance is per Discord user, so one agent serves a whole server: many people, separate USDC budgets each. A <span class="mono" style="color:var(--muted)">discord x402 arc</span> GitHub search returns nothing. This is agentic commerce where the users already are.</p>
+        <span class="big">1&nbsp;wallet, N&nbsp;caps</span>
+        <h3>each person capped in the contract</h3>
+        <p>A subject is <span class="mono" style="color:var(--muted)">keccak256("discord:&lt;guildId&gt;:&lt;userId&gt;")</span>, so SpendGuard holds a limit per person while the agent spends from one wallet. A voucher over someone's cap cannot be redeemed by anyone, the operator included. In the proof run one was refused with <span class="mono" style="color:var(--muted)">CapExceeded</span>.</p>
       </div>
     </div>
     <div class="judge">
-      <div class="jc"><div class="w">30%</div><h4>Agentic</h4><p>The agent decides what to buy, or not to. Budget enforced in code.</p></div>
-      <div class="jc"><div class="w">30%</div><h4>Traction</h4><p>Every answer that needs data is a real sub-cent settlement on Arc.</p></div>
-      <div class="jc"><div class="w">20%</div><h4>Circle tooling</h4><p>x402 exact scheme, EIP-3009 USDC, embedded facilitator, USDC-as-gas.</p></div>
-      <div class="jc"><div class="w">20%</div><h4>Innovation</h4><p>Buyer-side agent in a shared channel, the surface no rival holds.</p></div>
+      <div class="jc"><div class="w">3</div><h4>contracts live</h4><p>NanoChannel, SpendGuard and ServiceRegistry, all on Arc testnet.</p></div>
+      <div class="jc"><div class="w">51</div><h4>forge tests</h4><p>Including a fuzz test over redeem and cases for malleable and stale vouchers.</p></div>
+      <div class="jc"><div class="w">126</div><h4>pytest tests</h4><p>Deterministic and offline. ruff and mypy clean on top.</p></div>
+      <div class="jc"><div class="w">0</div><h4>payer transactions</h4><p>Measured before and after a 30-call run, deposit and close included.</p></div>
     </div>
     <div class="roadmap">
-      <span class="badge" style="color:var(--green); background:var(--green-soft)">Shipped</span>
-      <p><b>The open agent-to-agent marketplace is live.</b> Any member lists a priced service with <span class="mono" style="color:var(--muted)">/sell</span>, an admin verifies it with <span class="mono" style="color:var(--muted)">/verify-service</span>, and the agent can then discover it in <span class="mono" style="color:var(--muted)">/ask</span> and pay the lister's wallet directly. NanoPay is both the buyer and the marketplace, per-channel. Next: per-service reputation from settlement history, and listed services that are themselves NanoPay agents.</p>
+      <span class="badge">Lineage</span>
+      <p><b>MoonWalk grew out of NanoPay.</b> The Discord agent and the per-call x402 rail were built for the Lepton Agents Hackathon (Canteen × Circle). NanoPay is still the agent surface and the live bot. New for the Encode × Circle Programmable Money Hackathon: the three contracts, the payment channel with cumulative vouchers, the on-chain per-person caps, the ServiceRegistry, the dual-rail 402 with its <span class="mono" style="color:var(--muted)">/channel</span> endpoints plus the proof run above. The rails are the new work.</p>
     </div>
   </div>
 </section>
@@ -414,27 +543,43 @@
     <div class="faq">
       <details open>
         <summary>Is the money real?</summary>
-        <p>Yes. Real testnet USDC settles between two <b>distinct</b> wallets on Arc, status 1, and you can click every receipt on this page. The five settlements above are permanent on-chain records that need no server to verify. When the live box is running, each paid ask produces a <b>fresh</b> settlement of its own.</p>
+        <p>Yes. Real testnet USDC moves between two <b>distinct</b> wallets on Arc, status 1 on every receipt. You can click each hash on this page. They are permanent on-chain records that need no server to verify. In the channel run the payer's balance went from 9.788000 to 9.758000 USDC, exactly the $0.03 that was metered.</p>
       </details>
       <details>
-        <summary>Is the agent really deciding, or is it scripted?</summary>
-        <p>It is a real model tool-use call over a priced catalog. It can buy a tool, pick a different tool, or answer for free and spend nothing. Ask it a greeting and it spends $0; ask for a live price and it buys one. The budget is enforced in code <b>after</b> the model picks, so a hallucinated number can never overspend.</p>
+        <summary>Why a payment channel and not just x402 per call?</summary>
+        <p>Because the fee beats the price. One x402 settlement of a $0.001 call cost <b>$0.001873</b> in gas on Arc, measured on the receipts above. The channel spreads that cost: 30 calls redeemed in one transaction cost $0.006565 in total, which is <b>$0.000219</b> a call. x402 is still the right rail for a first call or a one-off, so the same endpoint offers both.</p>
+      </details>
+      <details>
+        <summary>Is the payer really gasless?</summary>
+        <p>On the happy path yes, measured rather than claimed: the payer's transaction count was 0 before and 0 after a run that opened a channel, metered 30 calls, settled them and closed. It signs the deposit, every voucher and the close. Anyone can submit those. In production the service does. <b>One exception:</b> if the service goes dark the payer has to send <span class="mono" style="color:var(--muted)">requestClose</span> and <span class="mono" style="color:var(--muted)">withdraw</span> itself, which needs USDC for gas.</p>
+      </details>
+      <details>
+        <summary>Is the agent really deciding or is it scripted?</summary>
+        <p>It is a real model tool-use call over a priced catalog. It can buy a tool, pick a different tool or answer for free and spend nothing. Ask it a greeting and it spends $0; ask for a live price and it buys one. The budget is enforced in code <b>after</b> the model picks, so a hallucinated number can never overspend.</p>
       </details>
       <details>
         <summary>Why does the agent show 0 on-chain transactions if it paid?</summary>
-        <p>EIP-3009, the x402 "exact" scheme. The agent signs a transfer authorization off-chain; a facilitator broadcasts it and pays the gas. On every receipt the <span class="mono" style="color:var(--muted)">from</span> is the facilitator, not the agent, and the <span class="mono" style="color:var(--muted)">to</span> is the USDC contract. The payer needs USDC, nothing else.</p>
+        <p>EIP-3009, the x402 "exact" scheme. The agent signs a transfer authorization off-chain; a facilitator broadcasts it and pays the gas. On every receipt the <span class="mono" style="color:var(--muted)">from</span> is the facilitator, not the agent. The <span class="mono" style="color:var(--muted)">to</span> is the USDC contract. The payer needs USDC, nothing else.</p>
       </details>
       <details>
         <summary>What is genuinely yours versus the Circle SDK?</summary>
-        <p>The agent's decision and per-user budget layer, the real executors behind the paywall, the two-wallet architecture, the embedded facilitator wiring, and the Discord surface itself. The x402 protocol plumbing is the SDK. The agentic commerce on top of it is the build.</p>
+        <p>The three contracts are ours: the channel, the cap enforcement and the registry, with 51 tests behind them. So is the Python chain package with its committed ABIs, the service-side rail that quotes and batches, the payer-side voucher client, the dual-rail 402 and the Discord surface. Circle's parts are USDC with EIP-3009 on Arc plus the x402 protocol plumbing. The settlement layer on top is the build.</p>
+      </details>
+      <details>
+        <summary>What stops one person draining the agent's wallet?</summary>
+        <p>SpendGuard, in the contract. Each person is a hashed subject with its own limit, lifetime or per window. A voucher that would push them past it makes <span class="mono" style="color:var(--muted)">redeem</span> revert. The operator cannot override that at redeem time. It also fails closed: a guarded channel with no cap configured cannot spend anything at all. When the bot sees a cap is reached it refuses the call rather than quietly switching to the other rail.</p>
       </details>
       <details>
         <summary>Which Circle tools does it use?</summary>
-        <p>The x402 exact scheme, EIP-3009 USDC on Arc, an embedded facilitator that settles in-process, and USDC-as-gas. The two-wallet split (agent payer, service facilitator) is what makes each settlement a real transfer between distinct parties, not a wallet paying itself.</p>
+        <p>The x402 exact scheme, EIP-3009 USDC on Arc, an embedded facilitator that settles in-process plus USDC-as-gas. The two-wallet split (agent payer, service facilitator) is what makes each settlement a real transfer between distinct parties, not a wallet paying itself. The channel adds EIP-712 vouchers and EIP-3009 <span class="mono" style="color:var(--muted)">receiveWithAuthorization</span> for the deposit.</p>
       </details>
       <details>
-        <summary>Real users yet?</summary>
-        <p>Yes, in the event window. The bot runs 24/7, so this is genuine usage: distinct Discord users have paid in the channel, each a real USDC settlement on Arc. The figures come from the payment store via the traction report, not hand-typed, and real Discord users are counted separately from the public web demo. We report the real number, never an inflated one.</p>
+        <summary>Has anyone actually used it?</summary>
+        <p>The bot has been live and paying in Discord since early July. The settlement rows on this page are pulled from the payment store rather than typed in. Rows marked as Discord are real people in a server paying sub-cent USDC on Arc. The channel rail is new, so its evidence is the full lifecycle run above rather than months of traffic. We report the real number, never an inflated one.</p>
+      </details>
+      <details>
+        <summary>What are the limits you are not hiding?</summary>
+        <p>Testnet only, because Arc has no mainnet. The challenge window on this deploy is one hour, so a service offline for an hour loses whatever it had not redeemed. The service trusts nothing but it does have to keep its vouchers: lose that store and it loses the right to collect. ServiceRegistry is deployed and tested, yet the Discord marketplace still reads its catalog from SQLite. The contracts are unaudited. The full list is in the README.</p>
       </details>
     </div>
   </div>
@@ -442,23 +587,24 @@
 
 <section style="text-align:center" class="alt">
   <div class="wrap">
-    <h2>Put an agent with a wallet in your server.</h2>
-    <p class="sub" style="margin: 0 auto 30px;">One click. It syncs its commands instantly and starts answering, paying its own way.</p>
-    <a class="btn btn-primary" style="font-size:16px;padding:14px 28px" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add NanoPay to Discord</a>
+    <h2>Meter an agent's spending without trusting it.</h2>
+    <p class="sub" style="margin: 0 auto 30px;">Add the bot and run <span class="mono">/channel</span> to see the deposit and the meters. Run <span class="mono">/cap</span> to hold someone to a limit the contract enforces.</p>
+    <a class="btn btn-primary" style="font-size:16px;padding:14px 28px" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add the bot to Discord</a>
+    <a class="btn btn-ghost" style="font-size:16px;padding:14px 28px" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">Read the contracts</a>
   </div>
 </section>
 
 <footer>
   <div class="wrap row">
     <div>
-      <div class="brand" style="font-size:18px;margin-bottom:6px"><span class="dot"></span>NanoPay</div>
+      <div class="brand" style="font-size:18px;margin-bottom:6px"><span class="dot"></span>MoonWalk</div>
       <div class="stack">
-        <span>x402</span><span>EIP-3009</span><span>Arc testnet</span><span>USDC</span><span>discord.py</span><span>FastAPI</span>
+        <span>Solidity 0.8.24</span><span>Foundry</span><span>EIP-712</span><span>EIP-3009</span><span>x402</span><span>Arc testnet</span><span>USDC</span><span>FastAPI</span>
       </div>
     </div>
     <div style="text-align:right">
-      <div>Built for the Lepton Agents Hackathon · Canteen × Circle</div>
-      <div style="margin-top:8px"><a href="https://github.com/zkasuran/lepton-discord" target="_blank" rel="noopener">github.com/zkasuran/lepton-discord</a></div>
+      <div>Built for the Encode × Circle Programmable Money Hackathon, on Arc</div>
+      <div style="margin-top:8px"><a href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">github.com/zkasuran/moonwalk</a> · <a href="ARCHITECTURE.md">architecture notes</a></div>
     </div>
   </div>
 </footer>
@@ -476,10 +622,12 @@
 
   // ---- hero typing animation --------------------------------------------
   const heroScript = [
-    { c: "prompt", t: "/ask what's BTC doing right now, one line?", nl: true },
-    { c: "sys", t: "agent · decides crypto_price is worth $0.0010, within budget", nl: true },
-    { c: "amber", t: "pays · signs EIP-3009, facilitator settles on Arc in 480ms", nl: true },
-    { c: "ok", t: "gets · BTC $62,486 (+1.83% 24h) from CoinGecko", nl: true },
+    { c: "prompt", t: "$ python scripts/channel_demo.py", nl: true },
+    { c: "sys", t: "open   · payer signs a $0.20 deposit, the service submits it", nl: true },
+    { c: "sys", t: "caps   · $0.005 default per person, alice raised to $0.06", nl: true },
+    { c: "amber", t: "meter  · 30 calls at $0.001, one signed voucher each, no gas", nl: true },
+    { c: "ok", t: "redeem · $0.03 settled in ONE transaction", nl: true },
+    { c: "amber", t: "guard  · a voucher over bob's cap reverts CapExceeded", nl: true },
     { receipt: true },
   ];
   const heroEl = document.getElementById("heroTerm");
@@ -490,10 +638,10 @@
       const r = document.createElement("div");
       r.className = "rcpt";
       r.innerHTML =
-        '<div class="kv"><span>answer</span><span class="u">BTC is trading at $62,486, up 1.83% today.</span></div>' +
-        '<div class="kv"><span>paid</span><span class="amber">$0.0010 USDC</span></div>' +
-        '<div class="kv"><span>agent tx count</span><span class="ok">0 (EIP-3009)</span></div>' +
-        '<div class="kv"><span>receipt</span><a class="tx" href="' + ARC + '0x70ca2d2aa7e6ff894484d0f6a4f910c4f1e89a3685bb5da30374e42bf75edd2f" target="_blank" rel="noopener">70ca2d2a ↗</a></div>';
+        '<div class="kv"><span>calls settled</span><span class="u">30 in one transaction</span></div>' +
+        '<div class="kv"><span>gas for the batch</span><span class="amber">$0.006565, so $0.000219 a call</span></div>' +
+        '<div class="kv"><span>payer tx count</span><span class="ok">0 before, 0 after</span></div>' +
+        '<div class="kv"><span>receipt</span><a class="tx" href="' + ARC + '0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a" target="_blank" rel="noopener">b779492a ↗</a></div>';
       heroEl.appendChild(r);
       return;
     }
@@ -526,7 +674,7 @@
       modeLine.textContent = "Live: every paid ask settles real USDC on Arc, a fresh receipt each time.";
     } catch (e) {
       pill.textContent = "live demo offline";
-      modeLine.textContent = "Live demo is offline right now. The settlements below are real, or run it in Discord.";
+      modeLine.textContent = "Live demo is offline right now. The settlements below are real. Run it live in Discord.";
     }
   }
   probe();
@@ -647,6 +795,130 @@
 
   document.getElementById("askForm").addEventListener("submit", (e) => { e.preventDefault(); ask(input.value); });
   document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => ask(c.dataset.q)));
+
+  // ---- live channel panel -----------------------------------------------
+  // Reads GET /channel from the same API base the Ask box uses. Every figure in
+  // this panel comes out of that response, including the "N calls in M
+  // transactions" line, which is summed from the settlements the response
+  // carries. When the fetch fails or the deployment does not serve the endpoint,
+  // the panel says exactly that. It never substitutes a number that could be
+  // mistaken for real data.
+  const chanId = document.getElementById("chanId");
+  const chanPill = document.getElementById("chanPill");
+  let chanBody = document.getElementById("chanBody");
+  const usd6 = (a) => "$" + (Number(a || 0) / 1e6).toFixed(6);
+  const shortHex = (h) => {
+    const s = String(h == null ? "" : h);
+    return s.length > 20 ? s.slice(0, 10) + "…" + s.slice(-6) : s;
+  };
+  const stat = (k, v, n) =>
+    '<div class="stat"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) +
+    '</div><div class="n">' + esc(n) + '</div></div>';
+
+  function chanFail(headline, detail) {
+    if (!chanBody) return;
+    chanPill.textContent = "unavailable";
+    chanPill.classList.remove("live");
+    chanId.textContent = "channel: not read";
+    chanBody.className = "notice";
+    chanBody.innerHTML = "<b>" + esc(headline) + "</b>" +
+      (detail ? '<span class="why">' + esc(detail) + "</span>" : "");
+  }
+
+  function renderChannel(d) {
+    const oc = d.onchain || {};
+    const off = d.offchain || {};
+    const people = Array.isArray(off.subjects) ? off.subjects : [];
+    const batches = Array.isArray(d.settlements) ? d.settlements : [];
+    const batchCalls = batches.reduce((n, s) => n + Number(s.calls || 0), 0);
+    const explorer = (d.contracts && d.contracts.explorer) || "https://testnet.arcscan.app";
+
+    chanPill.textContent = "● live";
+    chanPill.classList.add("live");
+    chanId.innerHTML = 'channel <span class="mono">' + esc(shortHex(d.channelId)) +
+      '</span> · payer <a class="tx" href="' + esc(explorer) + "/address/" +
+      esc(String(oc.payer || "")) + '" target="_blank" rel="noopener">' +
+      esc(shortHex(oc.payer)) + " ↗</a>";
+
+    let html = '<div class="stats">' +
+      stat("deposit", usd6(oc.depositAtomic), "funded on-chain") +
+      stat("outstanding", usd6(oc.outstandingAtomic), "left to spend") +
+      stat("metered calls", String(Number(off.meteredCalls || 0)), "signed off-chain") +
+      stat("pending", usd6(off.pendingAtomic), "redeems at " + usd6(off.thresholdAtomic)) +
+      "</div>";
+
+    if (batches.length) {
+      html += '<div class="notice" style="border-top:1px solid var(--line)"><b>' +
+        batchCalls + " calls settled in " + batches.length +
+        (batches.length === 1 ? " transaction" : " transactions") + ".</b><span class=\"why\">" +
+        batches.map((s) => '<a class="tx" href="' +
+          esc(s.url || explorer + "/tx/" + String(s.txHash || "")) +
+          '" target="_blank" rel="noopener">' + esc(shortHex(s.txHash)) + " ↗</a> " +
+          esc(String(Number(s.calls || 0))) + " calls, " + usd6(s.totalAtomic) +
+          ", fee " + usd6(s.gasFeeAtomic)).join("<br />") + "</span></div>";
+    } else {
+      html += '<div class="notice" style="border-top:1px solid var(--line)">No batch has been ' +
+        "redeemed on this channel yet. The lifecycle run further down is a completed one on " +
+        "the same contracts.</div>";
+    }
+
+    if (people.length) {
+      html += '<div class="prow h"><span>person, as a hashed subject</span><span>calls</span>' +
+        "<span>metered</span><span>cap left on-chain</span></div>" +
+        people.map((m) => '<div class="prow"><span class="who">' + esc(shortHex(m.subject)) +
+          "</span><span>" + esc(String(Number(m.calls || 0))) +
+          '</span><span class="mono" style="font-size:13px">' + usd6(m.cumulativeAtomic) +
+          '</span><span class="mono" style="font-size:13px">' + usd6(m.capRemainingAtomic) +
+          "</span></div>").join("");
+    } else {
+      html += '<div class="notice" style="border-top:1px solid var(--line)">Nobody has metered a ' +
+        "call on this channel yet, so there are no per-person rows to show.</div>";
+    }
+    chanBody.className = "";
+    chanBody.innerHTML = html;
+  }
+
+  async function loadChannel() {
+    if (!chanBody) return;
+    if (!API) {
+      chanFail("No API base is configured for this page.",
+        "Add ?api=<url> to point the panel at a service that serves GET /channel.");
+      return;
+    }
+    let r;
+    try {
+      r = await fetch(API + "/channel", { cache: "no-store" });
+    } catch (e) {
+      chanFail("Could not reach the service.",
+        "GET " + API + "/channel failed: " + (e && e.message ? e.message : String(e)));
+      return;
+    }
+    if (!r.ok) {
+      chanFail("The service answered " + r.status + " for /channel.",
+        "This deployment does not serve the channel endpoint yet. The contracts and the " +
+        "channel are on-chain regardless, so the receipts below are the proof.");
+      return;
+    }
+    let d;
+    try {
+      d = await r.json();
+    } catch (e) {
+      chanFail("The service returned something that is not JSON.", String(e));
+      return;
+    }
+    if (!d || d.enabled !== true) {
+      chanFail("The service has no open channel right now.",
+        (d && d.reason) ? String(d.reason) : "GET /channel reported enabled=false.");
+      return;
+    }
+    try {
+      renderChannel(d);
+    } catch (e) {
+      chanFail("The channel response was not the shape this page expects.", String(e));
+    }
+  }
+  loadChannel();
+  setInterval(loadChannel, 30000);
 </script>
 </body>
 </html>

@@ -1,261 +1,287 @@
-# NanoPay
+# MoonWalk
 
-**The Discord agent that pays its own way on Arc.**
+Nanopayment rails for agent commerce on Arc. A USDC payment channel plus
+per-person spend caps enforced on-chain, so settling a $0.001 call costs less than
+the call.
 
-You ask it something. It decides whether it needs a paid service, pays for that
-service in USDC over x402 on Arc from its own wallet, settles on-chain in under a
-second, and hands you the answer plus the receipt. No wallet, no signing, no human
-in the loop, no subscription.
+Built for the Encode x Circle Programmable Money Hackathon, on Arc, Circle's
+stablecoin-native L1.
 
-Built for the Lepton Agents Hackathon (Canteen x Circle), RFB-1: Autonomous Paying
-Agents.
+[![live on Arc](https://img.shields.io/badge/live_on-Arc_testnet_5042002-1f1f1f)](https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568)
+[![forge tests](https://img.shields.io/badge/forge_tests-51_passing-0f8a56)](#tests-and-verification)
+[![pytest](https://img.shields.io/badge/pytest-126_passing-0f8a56)](#tests-and-verification)
+[![rails](https://img.shields.io/badge/rails-x402_%2B_payment_channel-2775CA)](#how-it-works)
 
-[![live site](https://img.shields.io/badge/live-zkasuran.github.io%2Flepton--discord-0f8a56)](https://zkasuran.github.io/lepton-discord/)
-[![settles on Arc](https://img.shields.io/badge/settles_on-Arc_testnet-1f1f1f)](https://docs.arc.network)
-[![payments x402](https://img.shields.io/badge/payments-x402_%2B_EIP--3009-2775CA)](https://github.com/circlefin/arc-nanopayments)
-[![tests](https://img.shields.io/badge/tests-79_passing-0f8a56)](#tests)
+## The problem
 
-## Links
+A per-call on-chain transfer costs more than a $0.001 call is worth. Measured on
+Arc testnet: one x402 settlement of a $0.001 call burned 87,145 gas and $0.001873
+in fees ([`ad1f0d04`](https://testnet.arcscan.app/tx/0xad1f0d044f28535353b9d981293ad12e2f02da583d42374630cce3e6a3057c67)).
+The fee is nearly twice the price of the thing being bought. On that rail metered
+agent payments either overpay in fees or stop settling per call. The usual
+fallback is an operator's database. Then the receipt is a row someone can edit.
 
-- **Landing page (live):** https://zkasuran.github.io/lepton-discord/
-- **Join the demo server** (bot is already there, run `/ask` in `#general`):
-  https://discord.gg/JST4tjKWz
-- **Add NanoPay to your own server** (public bot, syncs its commands instantly):
+The second problem is the wallet. An agent that serves a whole channel spends from
+one wallet, so on-chain there is one payer and nothing says whose call was whose.
+A per-user budget in the backend is a promise: the operator can change the number
+and nobody outside can check it.
+
+## What MoonWalk does
+
+**The channel.** The payer funds once with a signed EIP-3009 authorization, then
+signs one EIP-712 voucher per call. A voucher carries a cumulative total for one
+subject, so the newest voucher supersedes every earlier one and a lost voucher
+costs nothing. The service redeems a batch in a single transaction. Measured on
+Arc testnet: 30 metered calls settled in one redeem, 262,639 gas, $0.006565 in
+fees. That is 8,755 gas a call against 87,145 on the per-call rail. Per call the
+fee drops from $0.001873 to $0.000219.
+
+**The cap.** SpendGuard holds a spend limit per subject in the contract, where a
+subject is `keccak256("discord:<guildId>:<userId>")`. Each person in a shared
+channel gets their own contract-enforced limit while the agent keeps spending from
+one wallet. A voucher that would push a subject past its cap cannot be redeemed by
+anyone, the operator included. In the proof run a voucher $0.001 over bob's $0.005
+cap was refused with `CapExceeded`.
+
+## Try it
+
+The agent surface is NanoPay, a Discord bot that is live and always on. It now
+prefers the channel rail and falls back to per-call x402.
+
+- **Join the demo server** and run `/ask` in `#general`: https://discord.gg/JST4tjKWz
+- **Add it to your own server**:
   https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands
-- **Source:** https://github.com/zkasuran/lepton-discord
+- **Landing page**: https://zkasuran.github.io/moonwalk/
+- **Source**: https://github.com/zkasuran/moonwalk
 
-## Try it right now
+In Discord: `/ask <question>` for the agent loop, `/channel` for the channel state
+and the per-person meters, `/cap` for an admin to set someone's on-chain limit.
 
-The bot is deployed and always on, so you do not need to run anything. Two ways:
-
-1. **Join the demo server** (fastest): https://discord.gg/JST4tjKWz then run `/ask`
-   in `#general`.
-2. **Add it to your own server**: use the invite link above. It is a public bot,
-   so it syncs its 11 commands to your server in seconds. Same agent, many servers.
-
-Then:
-
-- `/ask what's BTC doing right now, one line` -> the agent decides it needs a live
-  price, pays a sub-cent USDC toll on Arc, and answers with a clickable receipt.
-- `/ask explain the TCP handshake` -> it answers for free, spending $0.
-- `/budget` -> your per-user USDC budget.
-
-The landing page shows the same loop with an animated demo, a live "Ask the agent"
-box, the real on-chain settlements below, and a judges FAQ.
-
-## The gap this fills
-
-Almost every x402-on-Arc project is single-user: a website or a CLI, one wallet,
-one person. Buyer-side agents exist now (Keryx settles citation tolls on Arc), but
-they run one user at a time behind a web UI. Nobody has put an autonomous payer in
-the place communities actually live. A GitHub search for `discord x402 arc`
-returns nothing. NanoPay is that: an autonomous buyer inside a shared Discord
-channel, many distinct users each spending under their own USDC budget.
-
-## The loop
-
-```
-Discord user:  /ask "what's BTC doing and is it a good week to care?"
-        |
-        v
-  NanoPay agent  ── decides: "I need a live price, that costs $0.001"
-        |                     checks budget, picks the cheapest tool
-        v
-  x402 service on Arc  <── 402 challenge ── agent signs EIP-3009 (USDC, no gas)
-        |                   facilitator settles on Arc in <500ms, pays the gas
-        v
-  real CoinGecko price ──> agent composes the answer
-        |
-        v
-  Discord:  answer + "paid $0.001 · budget left $0.499 · Arc receipt 0xad1f…"
-```
-
-The agent's reasoning is free (it runs on the operator's model). It spends USDC
-only on the external tools it decides are worth buying.
-
-## Live proof (Arc testnet, verified on-chain)
-
-Two distinct wallets, real USDC moving between them, every settlement confirmed
-(status 1). Reproduce with `scripts/e2e_demo.py` and `scripts/agent_demo.py`, or
-just run `/ask` in Discord.
-
-| What | Tx | Result |
-|------|----|--------|
-| `/ask` full loop (agent decides, pays, composes) | [`70ca2d2a…`](https://testnet.arcscan.app/tx/0x70ca2d2aa7e6ff894484d0f6a4f910c4f1e89a3685bb5da30374e42bf75edd2f) | agent chose to pay CoinGecko, answered `BTC $62,486 +1.83%` |
-| `/ask` on the OpenAI-compatible model | [`2dd13f99…`](https://testnet.arcscan.app/tx/0x2dd13f99b06cdf9a43a71a618eb31bde76380541f06f662ad6cab156db6343b0) | agent chose to pay, answered `BTC $62,703 +0.09%` |
-| `/price BTC` (real CoinGecko) | [`ad1f0d04…`](https://testnet.arcscan.app/tx/0xad1f0d044f28535353b9d981293ad12e2f02da583d42374630cce3e6a3057c67) | `BTC = $62,498 (+1.85% 24h)` |
-| `/weather Tokyo` (real Open-Meteo) | [`59ab0652…`](https://testnet.arcscan.app/tx/0x59ab065209b8f5d4c7cf871aaa4528ab4416d23259ca70f478bbe11abe3c13af) | `Tokyo, JP: 23.3°C, partly cloudy` |
-| `/ping` (smoke) | [`48d60980…`](https://testnet.arcscan.app/tx/0x48d60980cb6a5da0ca7350f234b34250ec2001ad594a1ca4ceb232aaf1a039a7) | settled, −$0.001 |
-
-- Agent (payer): `0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4`
-- Service (payTo): `0xDB6c6340342e71A63cD11Ebac2185204b7777777`
-
-Detail worth noticing: the agent's on-chain transaction count is **0**. It paid
-every time and never sent a transaction, because EIP-3009 lets it sign an
-authorization off-chain while the facilitator broadcasts and pays the gas. On
-every receipt above the `from` is the facilitator `0xDB6c…`, not the agent, and
-the `to` is the USDC contract `0x3600…`. That is the whole point of the "exact"
-scheme: the payer needs USDC, nothing else.
-
-The three agency branches are reproducible too: `pay` (buys the priced tool),
-`answer_free` (no tool needed, $0 spent) and `decline` (over the per-user budget,
-enforced in code, not by the model).
-
-## How it maps to the judging
-
-This is RFB-1, Autonomous Paying Agents: an agent that discovers, evaluates and
-pays for paywalled APIs on a budget, without overspending.
-
-- **Agentic sophistication.** The agent decides. Given a free-form request it
-  reasons over a priced tool catalog, picks the single cheapest tool that helps
-  (or none), and refuses to spend past a budget. It is not a fixed
-  `/price -> CoinGecko` script. The budget is enforced in code after the model
-  picks, so the model cannot overspend.
-- **Traction.** Every `/ask` that needs data is a real sub-cent USDC settlement on
-  Arc, provable not claimed. The bot is live 24/7 so usage is real, and the
-  numbers are computed from the payment store by `scripts/traction_report.py`.
-- **Circle tooling.** x402 HTTP 402 exact scheme, EIP-3009 USDC on Arc, an
-  embedded facilitator that settles in-process, USDC-as-gas, and the two-wallet
-  split that makes each settlement a real transfer between distinct parties.
-- **Innovation.** An autonomous payer inside a shared social channel, the surface
-  no rival holds. Buyer-side agents on Arc exist (Keryx is the sharp one), but they
-  are single-user web or CLI. NanoPay's spend governance is per-user, so one agent
-  serves a whole channel: many people, separate USDC budgets each.
-
-## Commands
-
-| Command | What it does | Cost |
-|---------|--------------|------|
-| `/ask <prompt>` | The agent decides what, if anything, to buy, then answers | $0 to $0.01 |
-| `/budget` | Show your remaining USDC spend budget | free |
-| `/price <symbol>` | Direct live price (CoinGecko) | $0.001 |
-| `/weather <city>` | Direct live weather (Open-Meteo) | $0.001 |
-| `/news <topic>` | Latest headlines on any topic (Google News) | $0.001 |
-| `/gpt <prompt>` | Direct premium answer (the model, server-side) | $0.01 |
-| `/sell` | List your own priced service on this server's marketplace | free |
-| `/verify-service <name>` | Admin approves a listing so the agent can buy it | free |
-| `/services` | Browse this server's marketplace | free |
-| `/ping` | x402 smoke test | $0.001 |
-| `/nanopay-info` | About the bot | free |
-
-## The marketplace
-
-The channel is not just a buyer anymore, it is a market. Any member can list a
-priced service with `/sell`: a public http(s) endpoint, a sub-cent price (capped
-at $0.01 per call) and the wallet that gets paid. The listing stays invisible to
-the agent until a server admin approves it with `/verify-service`, so an unvetted
-endpoint never spends the agent's money. Once verified, the service joins the
-agent's tool catalog for that server: when someone's `/ask` matches what the
-service offers, the agent buys it over x402 and the USDC settles to the lister's
-wallet, not the house. `/services` shows the catalog, verified and pending.
-
-Guardrails, because listings are member-supplied: names are namespaced
-(`market_*`) so a listing can never shadow a builtin tool, the endpoint URL is
-resolved and refused if any address is non-public (no SSRF into localhost or
-cloud metadata), prices are capped and the per-user budget still binds every
-purchase.
-
-## Architecture
-
-Hexagonal: domain models hold no IO, ports define the seams, adapters do the work.
-
-- `src/agent/`: the brain. `planner.decide()` chooses a tool and enforces the
-  budget in code (not left to the model); `tools.py` is the priced catalog;
-  `llm.py` is the model provider layer.
-- `src/bot/`: the Discord client and `payer.py`, the x402 client that signs
-  EIP-3009 from the agent wallet.
-- `src/api/`: FastAPI resource server. `/execute/{id}` is the x402-gated endpoint;
-  `executor.py` runs the real services; `/demo/ask` is the public browser demo.
-- `src/payments/`: config, the embedded x402 facilitator, the SQLite store, and
-  the traction summary.
-
-Two wallets, on purpose: the agent (payer) is separate from the service (payTo and
-facilitator), so USDC actually moves between parties instead of round-tripping to
-itself.
-
-Stack: `x402==2.13` (exact EVM scheme), `discord.py`, `fastapi`, `eth-account`,
-`aiosqlite`, Arc testnet (`eip155:5042002`), USDC system contract
-`0x3600000000000000000000000000000000000000` (verified `name()="USDC"`,
-`version()="2"`, the values the EIP-712 domain must match or settlement reverts).
-
-## The model provider
-
-The agent's reasoning runs on Anthropic **or** any OpenAI-compatible endpoint,
-selected by env (`src/agent/llm.py`). Set `OPENAI_BASE_URL` + `OPENAI_API_KEY` for
-an OpenAI-compatible model, or `ANTHROPIC_API_KEY` for Claude, or force one with
-`LLM_PROVIDER`. Tool-use maps to the same decide-or-answer-free decision either
-way. Reasoning is free; USDC only ever pays for the external tools.
-
-## Public browser demo
-
-`POST /demo/ask` runs the real agent loop from a browser and returns the decision,
-answer, spend and a fresh Arc tx, so the landing page can settle a real payment per
-ask. It is rate-limited per IP with a global spend cap so public traffic can never
-drain the agent wallet, and CORS is opened for the static site.
-
-## Setup
+Reproduce the on-chain proof yourself. The first command is offline, the second
+spends real testnet USDC and needs `AGENT_PRIVATE_KEY` plus
+`DEPLOYER_PRIVATE_KEY` in `.env`:
 
 ```bash
-make dev-install            # uv venv + deps
-cp .env.example .env        # then fill in the values
-make lint                   # ruff + ruff format + mypy --strict
-make test                   # pytest
+cd contracts && forge test        # 51 tests against the contracts
+make channel-demo                 # the full lifecycle on Arc testnet, writes evidence/
 ```
 
-Required env: `DISCORD_BOT_TOKEN`, a model provider (`OPENAI_*` or
-`ANTHROPIC_API_KEY`), an `AGENT_PRIVATE_KEY` (the payer, holds USDC), a
-`SELLER_WALLET_ADDRESS` and a facilitator key (the service, receives USDC and
-relays settlement). Optional `GUILD_ID` syncs slash commands to your server
-instantly. See `.env.example`.
-
-## Run
+`make channel-demo` opens a fresh channel, sets caps, signs 30 metered calls,
+redeems them in one transaction, has an over-cap voucher refused, closes with both
+signatures, then writes every hash to `evidence/channel-<timestamp>.json`. To see
+the production channel instead of opening a new one:
 
 ```bash
-make api                                  # start the x402 resource server
-.venv/bin/python scripts/fund_agent.py    # generate + fund the agent wallet
-.venv/bin/python scripts/agent_demo.py "price of BTC?"   # one real agentic call
-make bot                                  # start the Discord bot
+set -a; . ./.env; set +a; .venv/bin/python scripts/open_channel.py
 ```
 
-Fund the agent wallet with testnet USDC from https://faucet.circle.com (Arc
-Testnet), or from another funded wallet.
+## Live on Arc
 
-If a slash command does not appear, force a guild sync (instant) without a
-restart: `.venv/bin/python scripts/sync_commands.py <guild_id>`.
+Chain 5042002, RPC `https://rpc.testnet.arc.network`, explorer
+`https://testnet.arcscan.app`. USDC is the system contract
+`0x3600000000000000000000000000000000000000`, 6 decimals, EIP-712 domain
+`name="USDC"` `version="2"`. All three contracts compiled with solc 0.8.24,
+`evm_version = paris`, optimizer on at 200 runs. Full record in
+[`deployments/arc-testnet.json`](deployments/arc-testnet.json).
 
-## Deploy (always on)
+| Contract | Address | Deploy tx |
+|---|---|---|
+| NanoChannel | [`0x3e2dE84eD534E39241682957d617ed761892D568`](https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568) | [`5a96809f`](https://testnet.arcscan.app/tx/0x5a96809fbd4cd2ab32eaff36d24234916ad2ad643832517e2ac633f8a9ac1833) |
+| SpendGuard | [`0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b`](https://testnet.arcscan.app/address/0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b) | [`da0a5e42`](https://testnet.arcscan.app/tx/0xda0a5e42fabc28725fc374cf02825a1eac7e54a77dee2e854fcb73c59010f1b0) |
+| ServiceRegistry | [`0x774E5F27b572450F5D21FE3929B45557F3468F9b`](https://testnet.arcscan.app/address/0x774E5F27b572450F5D21FE3929B45557F3468F9b) | [`d201aaeb`](https://testnet.arcscan.app/tx/0xd201aaebfc6c85d909a43cfb08626c481a5dd5249869873dcfc16437c98247d3) |
 
-The bot dials out to Discord, so it needs no inbound ports. Run the API and the
-bot as services so they survive reboots. The repo includes systemd-ready entry
-points (`run_api.py`, `run_bot.py`); point two `systemd` units at
-`/.venv/bin/python run_api.py` and `run_bot.py` with `Restart=on-failure`. The
-production instance runs exactly this, which is why the bot is live 24/7.
+### The proof run
 
-## Tests
+One pass of `scripts/channel_demo.py` against the live contracts, 2026-07-29.
+Every receipt below is status 1 on Arc testnet. Numbers come from
+[`evidence/channel-20260729T154745Z.json`](evidence/channel-20260729T154745Z.json).
 
-`pytest` is green (79 tests) and `mypy --strict` is clean. Network and model calls
-are mocked, so the suite is deterministic and offline. The on-chain settlements
-above were run separately against live Arc testnet.
+| Step | Tx | What happened |
+|---|---|---|
+| open, funded by a signed authorization | [`9923efff`](https://testnet.arcscan.app/tx/0x9923effffcc65964c0998a1ec7abe9a033776af80c6103bb0fe02c5f3fd9ded5) | $0.20 deposit pulled with EIP-3009, 218,926 gas, fee $0.005473 |
+| default cap for anyone | [`030f5352`](https://testnet.arcscan.app/tx/0x030f5352856ed5cb57c75445952aa89b6744f94f6705d74423d7b43ca9881673) | $0.005 lifetime, 71,829 gas |
+| cap override for alice | [`d0e2bc33`](https://testnet.arcscan.app/tx/0xd0e2bc33a606d8545aefb2ceba5bbcac5c2011857e0198ac02b67a97e792ba28) | $0.06 lifetime, 72,788 gas |
+| redeem 30 calls in ONE transaction | [`b779492a`](https://testnet.arcscan.app/tx/0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a) | $0.03 settled from 2 vouchers, 262,639 gas, fee $0.006565 |
+| voucher $0.001 over bob's cap | no transaction | the contract refused it with `CapExceeded`, so it can never be redeemed |
+| mutual close | [`622b3619`](https://testnet.arcscan.app/tx/0x622b3619ab023019c422ac1e158bbc14923e8e03a484ee50ba1cb4df9e8e4c4f) | both sides signed, the service submitted, $0.17 refunded, 81,277 gas |
 
-## Roadmap
+The payer was `0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4`. Its USDC went 9.788000
+to 9.758000, exactly the $0.03 that was metered. Its transaction count was **0
+before and 0 after**. Thirty paid calls, a deposit, a batch settlement and a close,
+and the payer sent nothing: it signed.
 
-Shipped: the open agent-to-agent marketplace. Any member lists a priced service,
-an admin verifies it is legit, and the agent discovers and pays for it, straight
-to the lister's wallet. NanoPay is both the buyer and the marketplace, per
-channel. Next: reputation for listings (settlement history per service) and
-letting a listed service itself be another NanoPay agent, closing the
-agent-pays-agent loop across servers.
+The 30 vouchers were signed with a digest built locally, then checked against the
+contract's own `voucherHash` view before the batch was submitted
+(`0x2f9476d4780d84a615dccede06780e3229725fd3ec1719bcc8faf0720d6fa12e`). A mismatch
+between our EIP-712 encoding and the contract's fails there instead of reverting a
+settlement later.
+
+### The production channel
+
+Open right now, read with `scripts/open_channel.py`:
+
+| Field | Value |
+|---|---|
+| channel id | `0xacdc1ad0ca59aa9ff87ca0838e47ce5efd380ae0afd43ad8f6ad8eeb46c7cbdd` |
+| payer | `0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4` |
+| service | `0xDB6c6340342e71A63cD11Ebac2185204b7777777` |
+| deposit / redeemed / outstanding | 0.500000 / 0.000000 / 0.500000 USDC |
+| guarded | yes, default cap $0.05 per person per 86,400s |
+| cap owner | the service, so the payer never needs to send a transaction |
+
+## How it works
+
+1. **Fund.** The payer signs an EIP-3009 `ReceiveWithAuthorization` naming the
+   channel as `to`. Anyone can submit `open()`; in practice the service does, and
+   pays the gas. No approve, no allowance, no transaction from the payer.
+2. **Cap.** The cap owner sets a scope default in SpendGuard plus per-subject
+   overrides. Unconfigured means zero: a guarded channel with no cap cannot redeem
+   anything.
+3. **Offer.** `POST /execute/{id}` answers 402 with two offers. The x402 exact
+   requirements go in the `PAYMENT-REQUIRED` header, the channel offer in
+   `X-CHANNEL-REQUIRED`. The channel offer carries the cumulative to sign and how
+   much of that person's cap is left. A client that speaks only x402 ignores the
+   second header and pays per call.
+4. **Meter.** The payer signs one `Voucher` and resends with `X-CHANNEL-VOUCHER`.
+   The service checks the signature, the cumulative and the on-chain cap before it
+   does the work, so it never delivers on a voucher it could not redeem. Refusing a
+   call and failing to redeem it can never disagree, because both read the same
+   contract.
+5. **Settle.** Once the accrued total crosses the threshold ($0.02 by default) the
+   service calls `redeem()` with the newest voucher per subject. One transaction,
+   one USDC transfer, every call since the last redeem. `POST /channel/settle`
+   forces it.
+6. **Close.** Both sides sign `Close(channelId, redeemed)` and anyone submits
+   `closeMutual`, which is how the payer's wallet stays free of transactions for the
+   whole life of the channel. If the service stops responding the payer sends
+   `requestClose` and then `withdraw` after the challenge window.
+
+### Gasless for whom
+
+Gasless for the payer, not for everybody. The payer signs the deposit, every
+voucher and the close. It never sends a transaction. That is measured, not
+claimed: transaction count 0 before and 0 after a 30-call run. Someone still pays
+gas. Here it is the service, out of the same USDC balance it is collecting into,
+because gas on Arc is USDC.
+
+The exception is the unilateral path. `requestClose` and `withdraw` are payer-only,
+so a payer that wants its remainder back without the service's cooperation has to
+send two transactions and needs USDC to pay for them.
+
+## New for this hackathon vs what already existed
+
+MoonWalk grew out of NanoPay. NanoPay is a Discord agent that decides whether to
+buy a priced tool and pays sub-cent USDC for it over x402 on Arc. It was built for
+the Lepton Agents Hackathon (Canteen x Circle) and it is still the agent surface
+and the live bot, at [zkasuran/lepton-discord](https://github.com/zkasuran/lepton-discord).
+MoonWalk is the payment rails underneath, written for this
+hackathon.
+
+Already existed: the Discord agent and its priced tool catalog, the per-call x402
+rail with EIP-3009 and the embedded facilitator, the two-wallet split, the
+marketplace listing flow, the landing page.
+
+New here: the three Solidity contracts and their 51 tests, the payment channel with
+cumulative per-subject vouchers, per-subject spend caps enforced on-chain, the
+`ServiceRegistry`, the `src/chain/` Python package with committed ABIs, the
+local-versus-contract digest check, the dual-rail 402, the `GET /channel`,
+`GET /channel/quote`, `GET /channel/cap`, `POST /channel/cap` and
+`POST /channel/settle` endpoints, the `/channel` and `/cap` Discord commands, the
+live proof run and the production channel.
+
+## Where the code is
+
+| Path | What |
+|---|---|
+| `contracts/src/NanoChannel.sol` | the channel: open, top up, redeem a batch, close two ways |
+| `contracts/src/SpendGuard.sol` | per-subject caps, lifetime or windowed, fails closed |
+| `contracts/src/ServiceRegistry.sol` | namespaced priced catalog, verify-before-buyable |
+| `src/chain/` | Python clients plus committed ABIs, so the runtime needs no toolchain |
+| `src/payments/channel_rail.py` | the service side: quote, check a voucher, redeem the batch |
+| `src/bot/channel_payer.py` | the payer side: read the offer, sign, resend |
+| `src/api/app.py` | the dual-rail 402 and the `/channel` endpoints |
+| `docs/ARCHITECTURE.md` | why each of these decisions went the way it did |
+
+## Tests and verification
+
+```bash
+make dev-install                  # uv venv + deps
+cp .env.example .env              # then fill it in
+make lint                         # ruff check, ruff format --check, mypy
+make test                         # pytest
+cd contracts && forge test        # the contracts
+```
+
+Run on 2026-07-29, from this working tree:
+
+```
+$ make test
+126 passed, 2 warnings in 1.09s
+
+$ make lint
+uv run ruff check src/ tests/           All checks passed!
+uv run ruff format --check src/ tests/  already formatted
+uv run mypy src/                        Success: no issues found
+
+$ cd contracts && forge test
+Ran 3 test suites: 51 tests passed, 0 failed, 0 skipped (51 total tests)
+  NanoChannel.t.sol      30 passed
+  ServiceRegistry.t.sol  11 passed
+  SpendGuard.t.sol       10 passed
+```
+
+The forge suite includes a fuzz test over redeem (512 runs) and named cases for the
+parts that are easy to get wrong: signature malleability, a stale voucher, a
+voucher for another channel, a mutual-close signature reused after more spend, and
+a guarded channel with no cap configured. The Python suite mocks network and model
+calls, so it is deterministic and offline. Everything on-chain in this README was
+run separately against live Arc testnet and is linked above.
+
+## Honest limits
+
+- **Testnet only.** Arc has no mainnet. Every address, receipt and balance here is
+  Arc testnet. The payer wallet is a throwaway.
+- **The challenge window on this deploy is 1 hour.** `challengeWindow()` on the live
+  NanoChannel returns 3600. That is the whole window a service has to redeem after
+  the payer asks to close, so a service offline for an hour loses whatever it had
+  not redeemed. It is set once at deploy and it should be chosen for the deployment,
+  not copied from this demo.
+- **An unconfigured cap blocks spend, by design.** SpendGuard fails closed. A
+  guarded channel with no default cap and no subject cap cannot redeem a single
+  voucher. That is the safe direction, but it does mean opening a channel is two
+  steps, not one.
+- **The service trusts nothing, but it does have to hold the vouchers.** Every check
+  it makes before delivering is the check the contract will make. It still has to
+  keep the signatures: lose the voucher store and it loses the right to collect what
+  it has not redeemed yet. Cumulative vouchers keep that survivable, since the newest
+  voucher per subject is the only one that matters.
+- **The payer must send one transaction to close unilaterally.** `requestClose` and
+  `withdraw` are payer-only. The gasless story covers the happy path and the
+  cooperative close, not a service that goes dark.
+- **A voucher lives 24 hours by default** (`MOONWALK_VOUCHER_TTL`). A leaked voucher
+  is worth its own cumulative and nothing more, because the contract only ever pays
+  the delta over what that subject already settled, but the window is real.
+- **ServiceRegistry is deployed and tested, not yet wired into Discord.** The
+  `/sell` and `/verify-service` flow still reads its catalog from SQLite. Moving it
+  onto the on-chain registry is the next step. The client for it is already in
+  `src/chain/registry.py`.
+- **The public API deployment is still on the pre-channel build**, so `GET /channel`
+  returns 404 there until it is redeployed. The channel itself is open on-chain and
+  `scripts/open_channel.py` reads it directly.
 
 ## Security
 
-Testnet only. Never commit a real key. `.env` is gitignored; `.env.example` ships
-placeholders. The agent wallet in the proof table is a throwaway testnet wallet.
+Testnet only. No real funds. `.env` is gitignored, `.env.example` ships
+placeholders. The contracts are unaudited. The payer never hands its key to the
+service: the service verifies voucher signatures against the payer's address and
+holds nothing but the signatures.
 
 ## AI disclosure
 
-This project was built with substantial help from Claude (Anthropic), which drafted
-the agent decision layer, the model provider, the executors, the deploy and this
-README. Every change was verified before commit: `ruff`, `ruff format --check`,
-`mypy --strict` and `pytest` all pass, and the payment loop was run end-to-end on
-Arc testnet with the transactions linked above. The author reviewed the work and
-owns the design choices.
+AI assistance (Claude, Anthropic) was used in developing this project: the
+contracts, the Python chain package, the channel rail, the tests and this README.
+The design, the review and the verification were done by the author. Verified
+before submitting: `make lint` (ruff, ruff format, mypy) clean, `make test` 126
+passing, `forge test` 51 passing, plus the on-chain lifecycle run end to end against
+live Arc testnet with every transaction linked above.
+
