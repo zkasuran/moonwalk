@@ -60,7 +60,7 @@
   <span class="tag">The problem</span>
   <h2>A $0.001 payment costs $0.0019 to settle</h2>
   <p>Metered agent payments break at the prices that make metering worth doing. On Arc, one x402 settlement of a $0.001 call used 87,145 gas, which is <span class="bad">$0.001873</span>. The fee is bigger than the payment.</p>
-  <p>So builders take one of two exits. Pay the fee anyway, or keep the meter in their own database and settle later. The second means every user trusts the operator's arithmetic.</p>
+  <p>So builders take one of two exits. Pay the fee anyway. Or keep the meter in their own database and settle later. The second means every user trusts the operator's arithmetic.</p>
   <div class="grid g2">
     <div class="card"><h3>And it gets worse in a group</h3><p>A shared assistant has one wallet and many people behind it. The chain sees one payer. So a per-person limit can only live in the operator's backend, where it is a promise, not a rule.</p></div>
     <div class="card"><h3>What the field does</h3><p>38 projects in this hackathon claim spend caps. Five claim them on-chain. Every one of them caps a single owner's budget.</p></div>
@@ -74,7 +74,7 @@
   <div class="grid g3">
     <div class="card"><h3>Per call, alone</h3><div class="stat bad">$0.001873</div><p>87,145 gas, one transaction per call</p></div>
     <div class="card"><h3>Per call, batched</h3><div class="stat num">$0.000219</div><p>30 calls in one transaction, 262,639 gas</p></div>
-    <div class="card"><h3>Break-even</h3><div class="stat">4 calls</div><p>Above that the channel is cheaper, and the gap grows</p></div>
+    <div class="card"><h3>Break-even</h3><div class="stat">4 calls</div><p>Above that the channel is cheaper. The gap grows with volume</p></div>
   </div>
   <p class="lead">A replayed voucher pays nothing, because the contract stores the highest total settled and pays only the difference. A lost voucher costs nothing either.</p>
 </section>
@@ -114,8 +114,8 @@
   <p>Scanned all 1073 projects in this hackathon. Plenty batch payments. Plenty cap an agent. All 13 chat-surface projects chose Telegram or WhatsApp, where every user has their own wallet, so the problem never appears.</p>
   <p>MoonWalk is the one where a single agent wallet serves many distinct humans in a shared room and each person's limit is enforced by a contract rather than by the backend.</p>
   <div class="grid g2">
-    <div class="card"><h3>Honest about the overlap</h3><p>Circle Gateway Nanopayments nets a payer's outflows too. It meters a payer, not the many people behind one payer, and it needs a deposit into Circle's contract with a TEE computing batches. Our deposit sits in a contract whose source is in the repo. The 402 can offer both and let the agent choose.</p></div>
-    <div class="card"><h3>Honest about the limits</h3><p>Testnet only, since Arc mainnet is not live. The channel nets one payer to one service. The service holds the vouchers, so losing them costs the service what it has not collected yet, and it recovers the rest from chain state.</p></div>
+    <div class="card"><h3>Honest about the overlap</h3><p>Circle Gateway Nanopayments nets a payer's outflows too. It meters a payer, not the many people behind one payer. It also needs a deposit into Circle's contract with a TEE computing batches. Our deposit sits in a contract whose source is in the repo. The 402 can offer both and let the agent choose.</p></div>
+    <div class="card"><h3>Honest about the limits</h3><p>Testnet only, since Arc mainnet is not live. The channel nets one payer to one service. The service holds the vouchers, so losing them costs the service what it has not collected yet. It recovers the rest from chain state.</p></div>
   </div>
 </section>
 
