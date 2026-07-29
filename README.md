@@ -45,8 +45,7 @@ cap was refused with `CapExceeded`.
 
 ## Try it
 
-The agent surface is NanoPay, a Discord bot that is live and always on. It now
-prefers the channel rail and falls back to per-call x402.
+The agent surface is NanoPay, a Discord bot that is live and always on.
 
 - **Join the demo server** and run `/ask` in `#general`: https://discord.gg/JST4tjKWz
 - **Add it to your own server**:
@@ -54,8 +53,16 @@ prefers the channel rail and falls back to per-call x402.
 - **Landing page**: https://zkasuran.github.io/moonwalk/
 - **Source**: https://github.com/zkasuran/moonwalk
 
-In Discord: `/ask <question>` for the agent loop, `/channel` for the channel state
-and the per-person meters, `/cap` for an admin to set someone's on-chain limit.
+One caveat worth stating plainly. The always-on deployment is still serving the
+previous build, so `/ask` pays per call over x402 there and `/channel` and `/cap`
+appear once it is redeployed from this commit. You can check for yourself:
+`https://nanopay-api.loadline.xyz/channel` answers 404 today and will answer with
+the channel state after the rollout. Everything below runs against the same live
+contracts from a clone, which is the part that does not depend on our uptime.
+
+In Discord, once rolled out: `/ask <question>` for the agent loop, `/channel` for
+the channel state and the per-person meters, `/cap` for an admin to set someone's
+on-chain limit.
 
 Reproduce the on-chain proof yourself. The first command is offline, the second
 spends real testnet USDC and needs `AGENT_PRIVATE_KEY` plus
