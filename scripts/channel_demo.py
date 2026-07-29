@@ -39,7 +39,8 @@ DEFAULT_CAP = 5_000  # $0.005 for anyone without their own cap
 ALICE_CAP = 60_000  # $0.06
 ALICE_CALLS = 25
 BOB_CALLS = 5
-GUILD = "1517400111699726488"
+GUILD = os.getenv("GUILD_ID", "1416577435369214084")  # the live demo server
+
 
 def usd(atomic: int) -> str:
     return f"${atomic / 1_000_000:.6f}".rstrip("0").rstrip(".")
@@ -116,7 +117,9 @@ def main() -> int:
     print(f"    alice   {usd(ALICE_CAP)}                {t2.url}")
     assert guard.remaining(channel_id, alice) == ALICE_CAP
     assert guard.remaining(channel_id, bob) == DEFAULT_CAP
-    record("caps", defaultAtomic=DEFAULT_CAP, aliceAtomic=ALICE_CAP, txHashes=[t.tx_hash, t2.tx_hash])
+    record(
+        "caps", defaultAtomic=DEFAULT_CAP, aliceAtomic=ALICE_CAP, txHashes=[t.tx_hash, t2.tx_hash]
+    )
 
     step(3, f"{ALICE_CALLS + BOB_CALLS} metered calls, one signed voucher each, zero gas")
     signed: dict[str, tuple[Any, bytes]] = {}
@@ -141,8 +144,12 @@ def main() -> int:
     onchain = channel.voucher_hash_onchain(final_voucher)
     assert local == onchain, f"digest mismatch: local {local.hex()} vs chain {onchain.hex()}"
     print(f"    voucher digest matches the contract: 0x{local.hex()[:24]}...")
-    record("vouchers", calls=ALICE_CALLS + BOB_CALLS, pricePerCallAtomic=PRICE,
-           digestChecked="0x" + local.hex())
+    record(
+        "vouchers",
+        calls=ALICE_CALLS + BOB_CALLS,
+        pricePerCallAtomic=PRICE,
+        digestChecked="0x" + local.hex(),
+    )
 
     step(4, "the service redeems the batch: one transaction for every call")
     vouchers = [signed["alice"][0], signed["bob"][0]]
@@ -161,7 +168,9 @@ def main() -> int:
     fee = redeemed.gas_cost_atomic
     assert abs(net - (expected_total - fee)) <= 1, f"net {net}, expected {expected_total - fee}"
     print(f"    service   +{usd(expected_total)} received, -{usd(fee)} gas, net +{usd(net)}")
-    print(f"    per-person on-chain: alice {usd(PRICE * ALICE_CALLS)}, bob {usd(PRICE * BOB_CALLS)}")
+    print(
+        f"    per-person on-chain: alice {usd(PRICE * ALICE_CALLS)}, bob {usd(PRICE * BOB_CALLS)}"
+    )
     print(f"    alice cap left {usd(guard.remaining(channel_id, alice))}")
     record(
         "redeem",
@@ -232,7 +241,7 @@ def main() -> int:
     out.mkdir(exist_ok=True)
     path = out / f"channel-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
-    print(f"\n  evidence         {path.relative_to(Path.cwd()) if str(path).startswith(str(Path.cwd())) else path}")
+    print(f"\n  evidence         {path.name} in {path.parent}")
     return 0
 
 

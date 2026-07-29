@@ -32,7 +32,7 @@ from src.chain import ArcClient, ChannelClient, discord_subject  # noqa: E402
 from src.chain import config as chain_config  # noqa: E402
 
 BASE = os.getenv("API_BASE_URL", "http://localhost:8402")
-GUILD = "1517400111699726488"
+GUILD = os.getenv("GUILD_ID", "1416577435369214084")  # the live demo server
 PEOPLE = [("900000000000000001", 4), ("900000000000000002", 2)]
 PRICE = 1_000  # $0.001 per call
 

@@ -37,6 +37,7 @@ from ..agent.tools import TOOL_CATALOG, MarketToolSpec, ToolSpec, get_tool, mark
 from ..chain import config as chain_config
 from ..chain.channel import ChannelClient
 from ..chain.client import ArcClient
+from ..chain.registry import RegistryClient, discord_namespace
 from ..payments.config import (
     AGENT_PRIVATE_KEY,
     API_BASE_URL,
@@ -69,6 +70,8 @@ class NanoPayBot(discord.Client):
         # that knows how to hash them. No RPC is made until a call needs one.
         self._payer_account: LocalAccount | None = None
         self._chain: ChannelClient | None = None
+        # the on-chain priced catalog, read alongside this server's own listings
+        self._registry: RegistryClient | None = None
 
     async def _sync_guild(self, guild: discord.abc.Snowflake) -> None:
         """Sync commands to one guild only (instant), the single source of truth.
@@ -84,9 +87,11 @@ class NanoPayBot(discord.Client):
     async def setup_hook(self) -> None:
         self._api = httpx.AsyncClient(base_url=API_BASE_URL, timeout=30)
         self._payer = build_paying_client()
+        arc = ArcClient()
+        self._registry = RegistryClient(arc)
         if AGENT_PRIVATE_KEY and RAIL_PREFERENCE != "x402":
             self._payer_account = ArcClient.account(AGENT_PRIVATE_KEY)
-            self._chain = ChannelClient(ArcClient())
+            self._chain = ChannelClient(arc)
             logger.info("channel rail available, payer %s", self._payer_account.address)
         if GUILD_ID:
             await self._sync_guild(discord.Object(id=int(GUILD_ID)))
@@ -154,21 +159,50 @@ async def _get_budget(user_id: str) -> dict[str, int]:
     return resp.json()  # type: ignore[no-any-return]
 
 
-async def _guild_catalog(guild_id: str) -> list[ToolSpec]:
-    """Builtins plus this guild's verified marketplace services.
+async def _registry_catalog(guild_id: str) -> list[ToolSpec]:
+    """Services this server has published on-chain and verified.
 
-    A marketplace outage never blocks /ask: on any error the agent just plans
-    over the builtin catalog.
+    The contract is the source of truth for the price and for who approved it, so
+    the agent can buy a service listed by a community it has never talked to. Chain
+    reads are blocking, so they run in a thread, and any failure just means the
+    agent plans over what it already knows.
+    """
+    if bot._registry is None:
+        return []
+    try:
+        listings = await asyncio.to_thread(bot._registry.catalog, discord_namespace(guild_id), True)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("on-chain catalog read failed for guild %s: %s", guild_id, exc)
+        return []
+    tools: list[ToolSpec] = []
+    for listing in listings:
+        tools.append(
+            market_tool(
+                name=listing.name,
+                description=f"{listing.description} (verified on-chain in this server)",
+                url=listing.endpoint,
+                price_atomic=listing.price_atomic,
+                wallet=listing.pay_to,
+            )
+        )
+    return tools
+
+
+async def _guild_catalog(guild_id: str) -> list[ToolSpec]:
+    """Builtins, this guild's own listings and whatever it published on-chain.
+
+    A marketplace or a chain outage never blocks /ask: on any error the agent just
+    plans over the catalog it could read.
     """
     assert bot._api is not None
+    extra: list[ToolSpec] = []
     try:
         resp = await bot._api.get(f"/market/services/{guild_id}")
         resp.raise_for_status()
         services = resp.json().get("services", [])
     except Exception as exc:
         logger.debug("market catalog fetch failed for guild %s: %s", guild_id, exc)
-        return list(TOOL_CATALOG)
-    extra: list[ToolSpec] = []
+        services = []
     for s in services:
         try:
             extra.append(
@@ -182,6 +216,10 @@ async def _guild_catalog(guild_id: str) -> list[ToolSpec]:
             )
         except (KeyError, TypeError, ValueError):
             continue
+    seen = {t.name for t in extra}
+    for tool in await _registry_catalog(guild_id):
+        if tool.name not in seen:
+            extra.append(tool)
     return list(TOOL_CATALOG) + extra
 
 
