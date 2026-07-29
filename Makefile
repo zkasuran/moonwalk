@@ -1,4 +1,4 @@
-.PHONY: install dev-install lint test test-all bot api contracts-build contracts-test abis deploy-arc channel-demo
+.PHONY: install dev-install lint test test-all bot api contracts-build contracts-test abis deploy-arc channel-demo deck
 
 install:
 	uv venv && uv pip install -e .
@@ -53,3 +53,11 @@ channel-demo:
 	uv run python scripts/channel_demo.py
 
 test-all: test contracts-test
+
+# The submission needs a presentation deck as a link. docs/deck.html is the deck,
+# this renders the same file to a 16:9 PDF for anywhere that wants a file.
+deck:
+	google-chrome --headless=new --disable-gpu --no-sandbox --hide-scrollbars \
+		--print-to-pdf=docs/MoonWalk-deck.pdf --no-pdf-header-footer \
+		--virtual-time-budget=5000 "file://$$PWD/docs/deck.html"
+	pdfinfo docs/MoonWalk-deck.pdf | grep -E "Pages|Page size"

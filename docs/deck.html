@@ -35,11 +35,15 @@
   li{margin-bottom:10px;color:#cfd8e3}
   .pill{display:inline-block;border:1px solid var(--edge);border-radius:999px;padding:5px 12px;font-size:0.8rem;color:var(--dim);margin-right:8px}
   @media print{
+    @page{size:1600px 900px;margin:0}
     html,body{background:#fff;color:#000}
-    section{min-height:auto;height:100vh;page-break-after:always;border:0}
+    section{min-height:0;height:900px;page-break-after:always;break-after:page;border:0;padding:70px 90px}
+    section:last-of-type{page-break-after:auto;break-after:auto}
     .card{border-color:#ccc;background:#f7f8fa}
     p,li{color:#222}.lead{color:#555}.tag,.foot{color:#777}
     td a{color:#333}
+    h1{font-size:64px}h2{font-size:40px}p{font-size:19px}
+    .stat{font-size:44px}.card p{font-size:16px}li{font-size:19px}
   }
 </style>
 </head>
