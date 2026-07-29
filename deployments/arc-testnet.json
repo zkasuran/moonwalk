@@ -1,0 +1,32 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "rpc": "https://rpc.testnet.arc.network",
+  "explorer": "https://testnet.arcscan.app",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "deployer": "0xdb6c6340342e71a63cd11ebac2185204b7777777",
+  "deployedAt": 1785339756945,
+  "compiler": {
+    "solc": "0.8.24",
+    "evmVersion": "paris",
+    "optimizer": true,
+    "runs": 200
+  },
+  "contracts": [
+    {
+      "name": "SpendGuard",
+      "address": "0xfbb8e1e61e8fbb09e5d5be308ac4f54d2865b67b",
+      "txHash": "0xda0a5e42fabc28725fc374cf02825a1eac7e54a77dee2e854fcb73c59010f1b0"
+    },
+    {
+      "name": "NanoChannel",
+      "address": "0x3e2de84ed534e39241682957d617ed761892d568",
+      "txHash": "0x5a96809fbd4cd2ab32eaff36d24234916ad2ad643832517e2ac633f8a9ac1833"
+    },
+    {
+      "name": "ServiceRegistry",
+      "address": "0x774e5f27b572450f5d21fe3929b45557f3468f9b",
+      "txHash": "0xd201aaebfc6c85d909a43cfb08626c481a5dd5249869873dcfc16437c98247d3"
+    }
+  ]
+}

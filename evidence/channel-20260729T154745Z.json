@@ -1,0 +1,67 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "steps": [
+    {
+      "step": "open",
+      "channelId": "0x827e325ef627b989382d46e8be57ab29850c940c63b420a43c87c8e4e5776706",
+      "depositAtomic": 200000,
+      "txHash": "0x9923effffcc65964c0998a1ec7abe9a033776af80c6103bb0fe02c5f3fd9ded5",
+      "block": 54278252,
+      "gasUsed": 218926
+    },
+    {
+      "step": "caps",
+      "defaultAtomic": 5000,
+      "aliceAtomic": 60000,
+      "txHashes": [
+        "0x030f5352856ed5cb57c75445952aa89b6744f94f6705d74423d7b43ca9881673",
+        "0xd0e2bc33a606d8545aefb2ceba5bbcac5c2011857e0198ac02b67a97e792ba28"
+      ]
+    },
+    {
+      "step": "vouchers",
+      "calls": 30,
+      "pricePerCallAtomic": 1000,
+      "digestChecked": "0x2f9476d4780d84a615dccede06780e3229725fd3ec1719bcc8faf0720d6fa12e"
+    },
+    {
+      "step": "redeem",
+      "totalAtomic": 30000,
+      "vouchers": 2,
+      "callsRepresented": 30,
+      "gasFeeAtomic": 6565,
+      "txHash": "0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a",
+      "block": 54278274,
+      "gasUsed": 262639
+    },
+    {
+      "step": "capRefusal",
+      "subject": "bob",
+      "attemptedAtomic": 6000,
+      "error": "CapExceeded"
+    },
+    {
+      "step": "closeMutual",
+      "refundAtomic": 170000,
+      "txHash": "0x622b3619ab023019c422ac1e158bbc14923e8e03a484ee50ba1cb4df9e8e4c4f",
+      "block": 54278290
+    }
+  ],
+  "summary": {
+    "payerStartAtomic": 9788000,
+    "payerEndAtomic": 9758000,
+    "serviceStartAtomic": 207447263,
+    "serviceEndAtomic": 207459577,
+    "payerTxCountStart": 0,
+    "payerTxCountEnd": 0,
+    "callsSettled": 30,
+    "settledAtomic": 30000,
+    "onchainTransactions": 5,
+    "contracts": {
+      "nanoChannel": "0x3e2dE84eD534E39241682957d617ed761892D568",
+      "spendGuard": "0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b",
+      "serviceRegistry": "0x774E5F27b572450F5D21FE3929B45557F3468F9b"
+    }
+  }
+}

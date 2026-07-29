@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from ..domain.models import MarketplaceService, PaymentRecord, PaymentStatus
+from ..domain.models import (
+    ChannelMeter,
+    ChannelSettlement,
+    MarketplaceService,
+    PaymentRecord,
+    PaymentStatus,
+)
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS payment_records (
@@ -52,6 +58,34 @@ CREATE TABLE IF NOT EXISTS marketplace_services (
     verified_by     TEXT NOT NULL DEFAULT '',
     enabled         INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL
+);
+
+-- Channel rail: the off-chain half of a nanopayment channel. One row per
+-- subject, holding the running cumulative and the newest signed voucher, so a
+-- restart mid-batch loses nothing and a redeem can be rebuilt from the store.
+CREATE TABLE IF NOT EXISTS channel_meters (
+    channel_id        TEXT NOT NULL,
+    subject           TEXT NOT NULL,
+    guild_id          TEXT NOT NULL DEFAULT '',
+    user_id           TEXT NOT NULL DEFAULT '',
+    cumulative_atomic INTEGER NOT NULL DEFAULT 0,
+    settled_atomic    INTEGER NOT NULL DEFAULT 0,
+    calls             INTEGER NOT NULL DEFAULT 0,
+    voucher_json      TEXT NOT NULL DEFAULT '',
+    updated_at        TEXT NOT NULL,
+    PRIMARY KEY (channel_id, subject)
+);
+
+CREATE TABLE IF NOT EXISTS channel_settlements (
+    settlement_id   TEXT PRIMARY KEY,
+    channel_id      TEXT NOT NULL,
+    tx_hash         TEXT NOT NULL,
+    total_atomic    INTEGER NOT NULL DEFAULT 0,
+    subject_count   INTEGER NOT NULL DEFAULT 0,
+    calls           INTEGER NOT NULL DEFAULT 0,
+    block_number    INTEGER NOT NULL DEFAULT 0,
+    gas_fee_atomic  INTEGER NOT NULL DEFAULT 0,
+    settled_at      TEXT NOT NULL
 );
 """
 
@@ -298,6 +332,150 @@ class PaymentStore:
             async with db.execute(sql, (guild_id,)) as cursor:
                 rows = await cursor.fetchall()
         return [_row_to_service(row) for row in rows]
+
+    # ---- channel rail -----------------------------------------------------
+
+    async def bump_meter(
+        self,
+        channel_id: str,
+        subject: str,
+        guild_id: str,
+        user_id: str,
+        cumulative_atomic: int,
+        voucher_json: str,
+    ) -> ChannelMeter:
+        """Move a subject's cumulative forward and keep the newest voucher.
+
+        Cumulative only ever grows, so a replayed or out-of-order voucher can
+        never lower what the service is owed.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self._path) as db:
+            await db.execute(
+                """
+                INSERT INTO channel_meters (
+                    channel_id, subject, guild_id, user_id,
+                    cumulative_atomic, settled_atomic, calls, voucher_json, updated_at
+                ) VALUES (?,?,?,?,?,0,1,?,?)
+                ON CONFLICT(channel_id, subject) DO UPDATE SET
+                    cumulative_atomic =
+                        MAX(excluded.cumulative_atomic, channel_meters.cumulative_atomic),
+                    calls = channel_meters.calls + 1,
+                    voucher_json = excluded.voucher_json,
+                    guild_id = excluded.guild_id,
+                    user_id = excluded.user_id,
+                    updated_at = excluded.updated_at
+                """,
+                (channel_id, subject, guild_id, user_id, cumulative_atomic, voucher_json, now),
+            )
+            await db.commit()
+        meter = await self.get_meter(channel_id, subject)
+        assert meter is not None  # just written
+        return meter
+
+    async def get_meter(self, channel_id: str, subject: str) -> ChannelMeter | None:
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM channel_meters WHERE channel_id = ? AND subject = ?",
+                (channel_id, subject),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return _row_to_meter(row) if row is not None else None
+
+    async def unsettled_meters(self, channel_id: str) -> list[ChannelMeter]:
+        """Subjects with earned but uncollected spend, biggest first."""
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM channel_meters WHERE channel_id = ?"
+                " AND cumulative_atomic > settled_atomic"
+                " ORDER BY (cumulative_atomic - settled_atomic) DESC",
+                (channel_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [_row_to_meter(row) for row in rows]
+
+    async def all_meters(self, channel_id: str) -> list[ChannelMeter]:
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM channel_meters WHERE channel_id = ? ORDER BY cumulative_atomic DESC",
+                (channel_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [_row_to_meter(row) for row in rows]
+
+    async def mark_meters_settled(self, channel_id: str, settled: dict[str, int]) -> None:
+        """Record what the chain now agrees each subject has paid."""
+        async with aiosqlite.connect(self._path) as db:
+            for subject, cumulative in settled.items():
+                await db.execute(
+                    "UPDATE channel_meters SET settled_atomic = ?, updated_at = ?"
+                    " WHERE channel_id = ? AND subject = ?",
+                    (cumulative, datetime.now(timezone.utc).isoformat(), channel_id, subject),
+                )
+            await db.commit()
+
+    async def record_settlement(self, settlement: ChannelSettlement) -> None:
+        async with aiosqlite.connect(self._path) as db:
+            await db.execute(
+                """
+                INSERT INTO channel_settlements (
+                    settlement_id, channel_id, tx_hash, total_atomic,
+                    subject_count, calls, block_number, gas_fee_atomic, settled_at
+                ) VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    settlement.settlement_id,
+                    settlement.channel_id,
+                    settlement.tx_hash,
+                    settlement.total_atomic,
+                    settlement.subject_count,
+                    settlement.calls,
+                    settlement.block_number,
+                    settlement.gas_fee_atomic,
+                    settlement.settled_at.isoformat(),
+                ),
+            )
+            await db.commit()
+
+    async def recent_channel_settlements(self, limit: int = 10) -> list[ChannelSettlement]:
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM channel_settlements ORDER BY settled_at DESC LIMIT ?", (limit,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [_row_to_settlement(row) for row in rows]
+
+
+def _row_to_meter(row: sqlite3.Row) -> ChannelMeter:
+    return ChannelMeter(
+        channel_id=row["channel_id"],
+        subject=row["subject"],
+        guild_id=row["guild_id"],
+        user_id=row["user_id"],
+        cumulative_atomic=int(row["cumulative_atomic"]),
+        settled_atomic=int(row["settled_atomic"]),
+        calls=int(row["calls"]),
+        voucher_json=row["voucher_json"],
+        updated_at=datetime.fromisoformat(row["updated_at"]),
+    )
+
+
+def _row_to_settlement(row: sqlite3.Row) -> ChannelSettlement:
+    return ChannelSettlement(
+        settlement_id=row["settlement_id"],
+        channel_id=row["channel_id"],
+        tx_hash=row["tx_hash"],
+        total_atomic=int(row["total_atomic"]),
+        subject_count=int(row["subject_count"]),
+        calls=int(row["calls"]),
+        block_number=int(row["block_number"]),
+        gas_fee_atomic=int(row["gas_fee_atomic"]),
+        settled_at=datetime.fromisoformat(row["settled_at"]),
+    )
 
 
 def _row_to_record(row: sqlite3.Row) -> PaymentRecord:

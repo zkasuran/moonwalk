@@ -84,6 +84,47 @@ class GuildConfig:
 
 
 @dataclass
+class ChannelMeter:
+    """What one subject owes on a channel, and the newest voucher that proves it.
+
+    The off-chain half of a nanopayment channel. `cumulative_atomic` only ever
+    grows, `settled_atomic` follows it on-chain after a redeem, and the gap
+    between them is money the service has earned but not collected yet.
+    """
+
+    channel_id: str = ""
+    subject: str = ""
+    guild_id: str = ""
+    user_id: str = ""
+    cumulative_atomic: int = 0
+    settled_atomic: int = 0
+    calls: int = 0
+    # The latest signed voucher, kept verbatim so a redeem can be rebuilt from
+    # the store alone if the process restarts mid-batch.
+    voucher_json: str = ""
+    updated_at: datetime = field(default_factory=_utcnow)
+
+    @property
+    def unsettled_atomic(self) -> int:
+        return max(0, self.cumulative_atomic - self.settled_atomic)
+
+
+@dataclass
+class ChannelSettlement:
+    """One on-chain redeem: many metered calls collapsed into one transaction."""
+
+    settlement_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    channel_id: str = ""
+    tx_hash: str = ""
+    total_atomic: int = 0
+    subject_count: int = 0
+    calls: int = 0
+    block_number: int = 0
+    gas_fee_atomic: int = 0
+    settled_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
 class MarketplaceService:
     """A priced service a member listed on the per-guild marketplace.
 

@@ -1,0 +1,32 @@
+[profile.default]
+src = "src"
+out = "out"
+test = "test"
+libs = ["lib"]
+solc = "0.8.24"
+# Arc is EVM compatible but documents a set of differences from mainnet, and it
+# does not publish an EVM target. "paris" compiles without PUSH0, MCOPY or
+# transient storage, so the same bytecode runs on Arc testnet and on a plain
+# local EVM. Gas on Arc is USDC and cheap, so the small size cost is worth the
+# portability.
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+gas_reports = ["NanoChannel", "SpendGuard", "ServiceRegistry"]
+
+[profile.default.fuzz]
+runs = 512
+
+[rpc_endpoints]
+arc_testnet = "${ARC_RPC_URL}"
+
+[etherscan]
+# Arcscan has no verification API key requirement documented yet, so contract
+# source is published in this repo and the deployment receipts carry the
+# compiler settings needed to reproduce the bytecode.
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

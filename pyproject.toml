@@ -1,10 +1,11 @@
 [project]
-name = "lepton-discord"
+name = "moonwalk"
 version = "0.1.0"
-description = "Discord bot for x402 nanopayment-gated commands on Arc"
+description = "Nanopayment rails for agent commerce on Arc: channels, on-chain spend caps and a priced service registry, with a Discord agent that spends on them"
 requires-python = ">=3.10"
 dependencies = [
     "x402[fastapi,httpx,evm]",
+    "web3>=7.0.0",
     "discord.py>=2.4.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",

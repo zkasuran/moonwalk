@@ -19,3 +19,15 @@ GO-LIVE.md
 VIDEO-SCRIPT.md
 FLOW-PROMPTS.html
 MARKETPLACE-POSTS.html
+
+# Foundry build output and script caches. The committed ABIs in
+# src/chain/abis/ are what the runtime reads, so a clone needs no build.
+contracts/out/
+contracts/cache/
+
+# Local research and intel for the submission, not public repo content.
+ARC-FACTS-*.md
+RIVALS-*.md
+*-1515.json
+CODEX-VIDEO-BRIEF.md
+CONTENT-*.html

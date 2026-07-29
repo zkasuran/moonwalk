@@ -79,3 +79,25 @@ GUILD_ID = os.getenv("GUILD_ID", "")
 
 # SQLite DB path
 DB_PATH = os.getenv("DB_PATH", "nanopay.db")
+
+# ── Channel rail ─────────────────────────────────────────────────────────
+# The channel is identified by (payer, service, salt), so a stable salt lets both
+# sides derive the same channel id with no lookup and no shared state.
+CHANNEL_SALT = os.getenv("MOONWALK_CHANNEL_SALT", "moonwalk:v1")
+
+# Collect once this much has accrued off-chain. Lower means more transactions and
+# tighter counterparty risk for the service, higher means cheaper per call.
+REDEEM_THRESHOLD_ATOMIC = int(os.getenv("MOONWALK_REDEEM_THRESHOLD_ATOMIC", "20000"))
+
+# The channel payer. The service only ever needs the payer's ADDRESS: it verifies
+# voucher signatures against it and never holds the payer's key. Falls back to the
+# address of AGENT_PRIVATE_KEY for single-machine development.
+CHANNEL_PAYER_ADDRESS = os.getenv("MOONWALK_CHANNEL_PAYER", "")
+
+# Per-subject caps applied when a channel is opened by scripts/open_channel.py.
+CHANNEL_DEFAULT_CAP_ATOMIC = int(os.getenv("MOONWALK_DEFAULT_CAP_ATOMIC", "50000"))
+CHANNEL_CAP_WINDOW_SECONDS = int(os.getenv("MOONWALK_CAP_WINDOW_SECONDS", "86400"))
+
+# Which rail the agent prefers: "auto" tries the channel and falls back to x402,
+# "channel" refuses to pay any other way, "x402" ignores the channel entirely.
+RAIL_PREFERENCE = os.getenv("MOONWALK_RAIL", "auto").strip().lower()

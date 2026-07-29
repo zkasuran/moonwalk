@@ -1,13 +1,15 @@
 """Discord bot: the autonomous buyer.
 
-The agent pays from its own wallet, signing EIP-3009 (USDC only, no gas) while the
-facilitator settles on-chain. No MetaMask and no human in the signing loop. A
-manual MetaMask page exists as a fallback for the direct commands if the agent
-wallet is empty.
+The agent pays from its own wallet and never sends a transaction. Two rails do
+that. On the channel it signs a voucher, which costs it nothing and settles later
+in a batch. On x402 it signs an EIP-3009 authorization and the facilitator settles
+that call on-chain immediately. It prefers the channel when the service offers one.
 
 Commands:
   /ask prompt:<text>       — the agent decides what (if anything) to pay for
   /budget                  — show remaining USDC spend budget
+  /channel                 — the nanopayment channel: deposit, meters, settlements
+  /cap                     — admin sets a member's on-chain spend cap
   /price symbol:<ticker>   — direct live price (CoinGecko), $0.001
   /weather city:<city>     — direct live weather (Open-Meteo), $0.001
   /news topic:<topic>      — latest headlines (Google News), $0.001
@@ -15,7 +17,7 @@ Commands:
   /sell                    — list your own priced service on the marketplace
   /verify-service          — admin approves a listing so the agent can buy it
   /services                — browse this server's marketplace
-  /ping                    — x402 smoke test
+  /ping                    — payment smoke test
   /nanopay-info            — about the bot
 """
 
@@ -23,19 +25,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 import discord
 import httpx
 from discord import app_commands
+from eth_account.signers.local import LocalAccount
 
 from ..agent import planner
 from ..agent.tools import TOOL_CATALOG, MarketToolSpec, ToolSpec, get_tool, market_tool
+from ..chain import config as chain_config
+from ..chain.channel import ChannelClient
+from ..chain.client import ArcClient
 from ..payments.config import (
+    AGENT_PRIVATE_KEY,
     API_BASE_URL,
     DEFAULT_PRICE_ATOMIC,
     DISCORD_BOT_TOKEN,
     GUILD_ID,
+    RAIL_PREFERENCE,
 )
+from .channel_payer import CapReached, ChannelUnavailable, pay_on_channel
 from .payer import build_paying_client, pay_and_execute
 
 logger = logging.getLogger("nanopay.bot")
@@ -55,6 +65,10 @@ class NanoPayBot(discord.Client):
         self._api: httpx.AsyncClient | None = None
         # x402-paying client — auto-handles 402 and retries with EIP-3009 sig
         self._payer: httpx.AsyncClient | None = None
+        # channel rail: the account that signs vouchers and the contract client
+        # that knows how to hash them. No RPC is made until a call needs one.
+        self._payer_account: LocalAccount | None = None
+        self._chain: ChannelClient | None = None
 
     async def _sync_guild(self, guild: discord.abc.Snowflake) -> None:
         """Sync commands to one guild only (instant), the single source of truth.
@@ -70,6 +84,10 @@ class NanoPayBot(discord.Client):
     async def setup_hook(self) -> None:
         self._api = httpx.AsyncClient(base_url=API_BASE_URL, timeout=30)
         self._payer = build_paying_client()
+        if AGENT_PRIVATE_KEY and RAIL_PREFERENCE != "x402":
+            self._payer_account = ArcClient.account(AGENT_PRIVATE_KEY)
+            self._chain = ChannelClient(ArcClient())
+            logger.info("channel rail available, payer %s", self._payer_account.address)
         if GUILD_ID:
             await self._sync_guild(discord.Object(id=int(GUILD_ID)))
 
@@ -177,20 +195,74 @@ def _tool_price(name: str) -> int:
     return tool.price_atomic if tool else DEFAULT_PRICE_ATOMIC
 
 
-def _result_embed(command_name: str, result: str, tx: str) -> discord.Embed:
+def _result_embed(
+    command_name: str,
+    result: str,
+    tx: str,
+    rail: str = "x402-exact",
+    channel: dict[str, Any] | None = None,
+) -> discord.Embed:
     embed = discord.Embed(
         title=f"/{command_name}",
         description=result,
         color=0x22C55E,
     )
+    if rail == "nanochannel" and channel is not None:
+        # There is no per-call hash by design. The proof is the signed voucher now
+        # and the batch transaction later, so say that instead of showing nothing.
+        cumulative = _price_display(int(channel.get("cumulativeAtomic", 0)))
+        embed.add_field(
+            name="Paid",
+            value=f"voucher signed, cumulative {cumulative}",
+            inline=False,
+        )
+        embed.add_field(name="Calls on channel", value=str(channel.get("calls", "?")), inline=True)
+        embed.add_field(
+            name="Cap left",
+            value=_price_display(int(channel.get("capRemainingAtomic", 0))),
+            inline=True,
+        )
+        embed.add_field(
+            name="Channel",
+            value=f"[{str(channel.get('channelId', ''))[:14]}...]"
+            f"({chain_config.address_url(chain_config.NANO_CHANNEL_ADDRESS)})",
+            inline=False,
+        )
+        embed.set_footer(text="Metered on the MoonWalk channel, settles on Arc in a batch")
+        return embed
     if tx:
         embed.add_field(
             name="Arc tx",
-            value=f"[{tx[:16]}...](https://testnet.arcscan.app/tx/{tx})",
+            value=f"[{tx[:16]}...]({chain_config.tx_url(tx)})",
             inline=False,
         )
-    embed.set_footer(text="Paid via x402 on Arc Testnet · NanoPay")
+    embed.set_footer(text="Paid per call via x402 on Arc testnet")
     return embed
+
+
+async def _pay(payment_id: str, price_atomic: int) -> tuple[dict[str, Any], str]:
+    """Pay for one call and return the service's response plus the rail used.
+
+    The channel goes first when the service offers one: a voucher costs the agent
+    a signature and no gas, where x402 costs a settlement per call. x402 stays the
+    fallback, and it is still the right rail for a caller with no channel open.
+    """
+    if RAIL_PREFERENCE != "x402" and bot._chain and bot._payer_account and bot._api:
+        try:
+            data = await pay_on_channel(
+                bot._api, bot._payer_account, bot._chain, payment_id, price_atomic
+            )
+            return data, "nanochannel"
+        except CapReached:
+            raise
+        except ChannelUnavailable as exc:
+            logger.debug("no channel offered: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - fall back rather than fail the call
+            logger.warning("channel payment failed, falling back to x402: %s", exc)
+    if RAIL_PREFERENCE == "channel":
+        raise RuntimeError("MOONWALK_RAIL=channel but the channel rail is unavailable")
+    assert bot._payer is not None
+    return await pay_and_execute(bot._payer, payment_id), "x402-exact"
 
 
 async def _handle_premium_command(
@@ -226,14 +298,24 @@ async def _handle_premium_command(
     pay_url = data["pay_url"]
     price_str = _price_display(price_atomic)
 
-    # Mode A: bot pays autonomously
-    assert bot._payer is not None
+    # Mode A: the agent pays autonomously, channel first then x402
     try:
-        result_data = await pay_and_execute(bot._payer, payment_id)
-        tx = result_data.get("tx_hash", "")
-        result = result_data.get("result", "(no result)")
+        result_data, rail = await _pay(payment_id, price_atomic)
         await interaction.followup.send(
-            embed=_result_embed(command_name, result, tx),
+            embed=_result_embed(
+                command_name,
+                str(result_data.get("result", "(no result)")),
+                str(result_data.get("tx_hash", "")),
+                rail,
+                result_data,
+            ),
+            ephemeral=True,
+        )
+        return
+    except CapReached as exc:
+        await interaction.followup.send(
+            f"The contract will not let this call through: {exc}. "
+            "A server admin can raise your cap with /cap.",
             ephemeral=True,
         )
         return
@@ -347,14 +429,20 @@ async def _handle_agent_request(interaction: discord.Interaction, prompt: str) -
             price_atomic=tool.price_atomic,
             pay_to=pay_to,
         )
-        result_data = await pay_and_execute(bot._payer, data["payment_id"])  # type: ignore[arg-type]
+        result_data, rail = await _pay(data["payment_id"], tool.price_atomic)
+    except CapReached as exc:
+        await interaction.followup.send(
+            f"The contract refused this spend: {exc}. An admin can raise the cap with /cap.",
+            ephemeral=True,
+        )
+        return
     except Exception as exc:
         logger.warning("agent pay/execute failed: %s", exc)
         await interaction.followup.send(f"Agent payment failed: {exc}", ephemeral=True)
         return
 
-    tx = result_data.get("tx_hash", "")
-    tool_result = result_data.get("result", "(no result)")
+    tx = str(result_data.get("tx_hash", ""))
+    tool_result = str(result_data.get("result", "(no result)"))
     # The payment already settled, so never lose the paid result: if composing the
     # answer fails, fall back to the raw tool output the user paid for.
     try:
@@ -370,13 +458,26 @@ async def _handle_agent_request(interaction: discord.Interaction, prompt: str) -
     embed.add_field(name="Decision", value=f"Paid {tool.name} ({tool.price_display})", inline=False)
     embed.add_field(name="Spent now", value=tool.price_display, inline=True)
     embed.add_field(name="Budget left", value=_price_display(left_after), inline=True)
-    if tx:
+    if rail == "nanochannel":
         embed.add_field(
-            name="Arc receipt",
-            value=f"[{tx[:16]}...](https://testnet.arcscan.app/tx/{tx})",
+            name="Rail",
+            value=(
+                "channel voucher, no transaction. Cumulative "
+                f"{_price_display(int(result_data.get('cumulativeAtomic', 0)))} over "
+                f"{result_data.get('calls', '?')} calls, cap left "
+                f"{_price_display(int(result_data.get('capRemainingAtomic', 0)))}"
+            ),
             inline=False,
         )
-    embed.set_footer(text="Paid via x402 on Arc Testnet • NanoPay agent")
+        embed.set_footer(text="Metered on the MoonWalk channel, settles on Arc in a batch")
+    else:
+        if tx:
+            embed.add_field(
+                name="Arc receipt",
+                value=f"[{tx[:16]}...]({chain_config.tx_url(tx)})",
+                inline=False,
+            )
+        embed.set_footer(text="Paid per call via x402 on Arc testnet")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -480,6 +581,182 @@ async def cmd_gpt(interaction: discord.Interaction, prompt: str) -> None:
 @bot.tree.command(name="ping", description="x402 smoke test, $0.001 USDC, bot pays")
 async def cmd_ping(interaction: discord.Interaction) -> None:
     await _handle_premium_command(interaction, "ping", {}, 1000)
+
+
+# ============================================================================
+# Channel commands
+# ============================================================================
+
+
+@bot.tree.command(
+    name="channel",
+    description="The nanopayment channel: deposit, per-person meters and settlements",
+)
+async def cmd_channel(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True)
+    assert bot._api is not None
+    try:
+        resp = await bot._api.get("/channel")
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        await interaction.followup.send(f"Could not read the channel: {exc}", ephemeral=True)
+        return
+
+    contracts = data.get("contracts", {})
+    if not data.get("enabled"):
+        embed = discord.Embed(
+            title="No channel open",
+            description=str(data.get("reason", "the service has no channel right now")),
+            color=0xF59E0B,
+        )
+        channel_url = chain_config.address_url(str(contracts.get("nanoChannel", "")))
+        embed.add_field(
+            name="Contracts on Arc",
+            value=f"[NanoChannel]({channel_url})",
+            inline=False,
+        )
+        embed.set_footer(text="Payments still work per call over x402")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    onchain = data.get("onchain", {})
+    offchain = data.get("offchain", {})
+    settlements = data.get("settlements", [])
+
+    embed = discord.Embed(
+        title="MoonWalk channel on Arc",
+        description=(
+            "The agent signs a voucher per call and never sends a transaction. "
+            "The service collects the lot in one transaction when enough has accrued."
+        ),
+        color=0x7C3AED,
+    )
+    embed.add_field(
+        name="Deposit", value=_price_display(int(onchain.get("depositAtomic", 0))), inline=True
+    )
+    embed.add_field(
+        name="Collected", value=_price_display(int(onchain.get("redeemedAtomic", 0))), inline=True
+    )
+    embed.add_field(
+        name="Left", value=_price_display(int(onchain.get("outstandingAtomic", 0))), inline=True
+    )
+    embed.add_field(name="Calls metered", value=str(offchain.get("meteredCalls", 0)), inline=True)
+    embed.add_field(
+        name="Waiting to settle",
+        value=_price_display(int(offchain.get("pendingAtomic", 0))),
+        inline=True,
+    )
+    embed.add_field(
+        name="Settles at",
+        value=_price_display(int(offchain.get("thresholdAtomic", 0))),
+        inline=True,
+    )
+
+    mine = next(
+        (
+            s
+            for s in offchain.get("subjects", [])
+            if str(s.get("userId")) == str(interaction.user.id)
+        ),
+        None,
+    )
+    if mine is not None:
+        embed.add_field(
+            name="You",
+            value=(
+                f"{mine.get('calls', 0)} calls, "
+                f"{_price_display(int(mine.get('cumulativeAtomic', 0)))} total, "
+                f"cap left {_price_display(int(mine.get('capRemainingAtomic', 0)))}"
+            ),
+            inline=False,
+        )
+
+    if settlements:
+        last = settlements[0]
+        embed.add_field(
+            name="Last settlement",
+            value=(
+                f"{last.get('calls', 0)} calls for "
+                f"{_price_display(int(last.get('totalAtomic', 0)))} in one transaction "
+                f"[{str(last.get('txHash', ''))[:14]}...]({last.get('url', '')})"
+            ),
+            inline=False,
+        )
+    embed.set_footer(text=f"Channel {str(data.get('channelId', ''))[:18]}... on Arc testnet")
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(
+    name="cap",
+    description="Admin: set a member's spend cap in the contract",
+)
+@app_commands.describe(
+    member="Whose cap to set",
+    limit="USDC allowed per window, e.g. 0.05",
+    window_hours="Length of the window in hours. 0 means a lifetime cap.",
+)
+async def cmd_cap(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    limit: float,
+    window_hours: float = 24.0,
+) -> None:
+    perms = getattr(interaction.user, "guild_permissions", None)
+    if not (perms and (perms.administrator or perms.manage_guild)):
+        await interaction.response.send_message(
+            "Only a server admin can set a cap.", ephemeral=True
+        )
+        return
+    await interaction.response.defer(ephemeral=True)
+    assert bot._api is not None
+    limit_atomic = int(round(limit * 1_000_000))
+    window_seconds = int(round(window_hours * 3600))
+    try:
+        resp = await bot._api.post(
+            "/channel/cap",
+            json={
+                "guild_id": str(interaction.guild_id or "dm"),
+                "user_id": str(member.id),
+                "limit_atomic": limit_atomic,
+                "window_seconds": window_seconds,
+            },
+        )
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", resp.text[:200])
+            await interaction.followup.send(f"Could not set the cap: {detail}", ephemeral=True)
+            return
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        await interaction.followup.send(f"Could not set the cap: {exc}", ephemeral=True)
+        return
+
+    window_text = (
+        "for their lifetime on this channel"
+        if window_seconds == 0
+        else (f"every {window_hours:g}h")
+    )
+    embed = discord.Embed(
+        title=f"Cap set for {member.display_name}",
+        description=(
+            f"The contract will now refuse any spend above "
+            f"{_price_display(limit_atomic)} {window_text}. Not the bot, the contract."
+        ),
+        color=0x22C55E,
+    )
+    embed.add_field(
+        name="Transaction",
+        value=f"[{str(data.get('txHash', ''))[:16]}...]({data.get('url', '')})",
+        inline=False,
+    )
+    cap = data.get("cap", {})
+    embed.add_field(
+        name="Available now",
+        value=_price_display(int(cap.get("remainingAtomic", 0))),
+        inline=True,
+    )
+    embed.set_footer(text="SpendGuard on Arc testnet")
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ============================================================================
@@ -605,28 +882,44 @@ async def cmd_services(interaction: discord.Interaction) -> None:
 # ============================================================================
 
 
-@bot.tree.command(name="nanopay-info", description="About NanoPay for Discord")
+@bot.tree.command(name="nanopay-info", description="About MoonWalk and the NanoPay agent")
 async def cmd_info(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
-        title="NanoPay, the Discord agent that pays its own way",
+        title="MoonWalk, the agent that pays its own way",
         description=(
-            "Ask for something behind a paywall. The agent pays an x402 service "
-            "in USDC on Arc from its own wallet, settles on-chain, and returns the "
-            "result. No MetaMask, no human wallet step.\n\n"
-            "The agent signs an EIP-3009 authorization (USDC only, no gas). The "
-            "service relays it on-chain and pays the gas. Two distinct wallets, so "
-            "USDC actually moves."
+            "Ask for something behind a paywall. The agent decides whether it is "
+            "worth buying, pays in USDC on Arc from its own wallet, and returns the "
+            "result. It never sends a transaction and no human signs anything.\n\n"
+            "Two rails. On the channel it signs a voucher per call, and the service "
+            "collects many calls in one transaction. On x402 it signs an EIP-3009 "
+            "authorization and that single call settles on-chain immediately."
         ),
         color=0x7C3AED,
     )
-    embed.add_field(name="Network", value="Arc Testnet (eip155:5042002)", inline=False)
-    embed.add_field(name="Protocol", value="x402 exact — EIP-3009 USDC", inline=False)
+    embed.add_field(name="Network", value="Arc testnet (eip155:5042002)", inline=False)
+    embed.add_field(
+        name="Your limit",
+        value=(
+            "Each person has their own cap held in the SpendGuard contract, so the "
+            "operator cannot spend past it either. Check yours with /channel."
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Contracts",
+        value=(
+            f"[NanoChannel]({chain_config.address_url(chain_config.NANO_CHANNEL_ADDRESS)}) · "
+            f"[SpendGuard]({chain_config.address_url(chain_config.SPEND_GUARD_ADDRESS)}) · "
+            f"[ServiceRegistry]({chain_config.address_url(chain_config.SERVICE_REGISTRY_ADDRESS)})"
+        ),
+        inline=False,
+    )
     embed.add_field(
         name="Pricing",
         value="$0.001 per data call, $0.01 for a premium answer",
         inline=False,
     )
-    embed.set_footer(text="NanoPay, Lepton Agents Hackathon 2026")
+    embed.set_footer(text="MoonWalk, Programmable Money Hackathon 2026")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
