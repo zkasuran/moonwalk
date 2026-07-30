@@ -9,7 +9,7 @@ stablecoin-native L1.
 
 [![live on Arc](https://img.shields.io/badge/live_on-Arc_testnet_5042002-1f1f1f)](https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568)
 [![forge tests](https://img.shields.io/badge/forge_tests-51_passing-0f8a56)](#tests-and-verification)
-[![pytest](https://img.shields.io/badge/pytest-126_passing-0f8a56)](#tests-and-verification)
+[![pytest](https://img.shields.io/badge/pytest-196_passing-0f8a56)](#tests-and-verification)
 [![rails](https://img.shields.io/badge/rails-x402_%2B_payment_channel-2775CA)](#how-it-works)
 
 ## The problem
@@ -175,7 +175,43 @@ The exception is the unilateral path. `requestClose` and `withdraw` are payer-on
 so a payer that wants its remainder back without the service's cooperation has to
 send two transactions and needs USDC to pay for them.
 
+## Circle's own products, wired in
+
+MoonWalk was already running on Circle rails: USDC on Arc, EIP-3009 gasless
+authorizations, x402 over HTTP. Two of Circle's own services are now in the code and
+exercised live, one is read-only on purpose, and three were rejected with evidence
+rather than listed as future work. The whole write-up, including what is UNVERIFIED,
+is [`docs/CIRCLE-INTEGRATIONS.md`](docs/CIRCLE-INTEGRATIONS.md).
+
+| Circle product | Status | Code |
+|---|---|---|
+| Developer-controlled Wallets | working, live on Arc testnet | `src/circle/wallets.py` |
+| CCTP V2 with Iris attestation | working, live both directions | `src/circle/cctp.py` |
+| Gateway (balances, wallet state) | read only, by choice | `src/circle/gateway.py` |
+| Gateway Nanopayments rail | not built, reasoned in the doc | none |
+| Faucet API | blocked for our key, HTTP 403 | none |
+| Paymaster, StableFX | not on Arc, or permissioned | none |
+
+**A wallet whose key we do not hold.** MoonWalk asks a signer for one thing, an
+EIP-712 signature, so `MOONWALK_SIGNER=circle` swaps the local key for a
+developer-controlled Circle wallet where this process never sees the key. Circle
+signed a channel voucher for chain 5042002 and the digest matched
+`NanoChannel.voucherHash()` on Arc byte for byte, then signed an EIP-3009
+authorization that a relayer submitted: USDC left the Circle-custodied wallet with
+that wallet sending no transaction and paying no gas, transaction count 0 before and
+after. Local signing stays the default because a voucher per call cannot afford an
+HTTPS round trip, which the doc explains rather than hides.
+
+**The agent refills its own Arc balance.** `scripts/cctp_refill.py` burns USDC on a
+source testnet, waits for Circle's Iris attestation and mints on Arc, and the dry run
+is the default: it reads both chains, asks Iris for the live fee, builds the calldata
+and `eth_call`s it before anything is signed. Three real transfers on 2026-07-29, six
+transactions, including a threshold-driven refill the script decided on its own:
+Circle charged $0.00005 of the $0.000063 allowed and $0.49995 minted on Arc. Receipts
+in `evidence/cctp-live-*.json`.
+
 ## New for this hackathon vs what already existed
+
 
 MoonWalk grew out of NanoPay. NanoPay is a Discord agent that decides whether to
 buy a priced tool and pays sub-cent USDC for it over x402 on Arc. It was built for
@@ -194,7 +230,8 @@ cumulative per-subject vouchers, per-subject spend caps enforced on-chain, the
 local-versus-contract digest check, the dual-rail 402, the `GET /channel`,
 `GET /channel/quote`, `GET /channel/cap`, `POST /channel/cap` and
 `POST /channel/settle` endpoints, the `/channel` and `/cap` Discord commands, the
-live proof run and the production channel.
+live proof run and the production channel, the Circle developer-controlled wallet
+signer and the CCTP V2 self-refill in `src/circle/`.
 
 ## Where the code is
 
@@ -207,7 +244,9 @@ live proof run and the production channel.
 | `src/payments/channel_rail.py` | the service side: quote, check a voucher, redeem the batch |
 | `src/bot/channel_payer.py` | the payer side: read the offer, sign, resend |
 | `src/api/app.py` | the dual-rail 402 and the `/channel` endpoints |
+| `src/circle/` | Circle's own products: the wallet signer, CCTP V2, Gateway reads |
 | `docs/ARCHITECTURE.md` | why each of these decisions went the way it did |
+| `docs/CIRCLE-INTEGRATIONS.md` | every Circle product tried, with receipts and the UNVERIFIED list |
 
 ## Tests and verification
 
@@ -219,16 +258,16 @@ make test                         # pytest
 cd contracts && forge test        # the contracts
 ```
 
-Run on 2026-07-29, from this working tree:
+Run on 2026-07-30, from this working tree:
 
 ```
 $ make test
-126 passed, 2 warnings in 1.09s
+196 passed, 2 warnings in 1.39s
 
 $ make lint
 uv run ruff check src/ tests/           All checks passed!
-uv run ruff format --check src/ tests/  already formatted
-uv run mypy src/                        Success: no issues found
+uv run ruff format --check src/ tests/  47 files already formatted
+uv run mypy src/                        Success: no issues found in 32 source files
 
 $ cd contracts && forge test
 Ran 3 test suites: 51 tests passed, 0 failed, 0 skipped (51 total tests)
@@ -241,8 +280,9 @@ The forge suite includes a fuzz test over redeem (512 runs) and named cases for 
 parts that are easy to get wrong: signature malleability, a stale voucher, a
 voucher for another channel, a mutual-close signature reused after more spend, and
 a guarded channel with no cap configured. The Python suite mocks network and model
-calls, so it is deterministic and offline. Everything on-chain in this README was
-run separately against live Arc testnet and is linked above.
+calls, so it is deterministic and offline, including the 55 tests over the Circle
+wallet signer and the CCTP bridge. Everything on-chain in this README was run
+separately against live Arc testnet and is linked above.
 
 ## Honest limits
 
@@ -275,6 +315,12 @@ run separately against live Arc testnet and is linked above.
 - **The public API deployment is still on the pre-channel build**, so `GET /channel`
   returns 404 there until it is redeployed. The channel itself is open on-chain and
   `scripts/open_channel.py` reads it directly.
+- **The Circle integrations carry their own UNVERIFIED list.** Circle signing is
+  proven for EIP-712 and EIP-3009 on Arc, but wallet creation through the API,
+  `signTransaction` and contract-execution transactions are not wired, so a
+  Circle-only deployment would still need a local key to submit settlements. The
+  Base Sepolia CCTP leg is configured and route-checked, never burned.
+  [`docs/CIRCLE-INTEGRATIONS.md`](docs/CIRCLE-INTEGRATIONS.md) lists all of it.
 
 ## Security
 
@@ -286,9 +332,9 @@ holds nothing but the signatures.
 ## AI disclosure
 
 AI assistance (Claude, Anthropic) was used in developing this project: the
-contracts, the Python chain package, the channel rail, the tests and this README.
-The design, the review and the verification were done by the author. Verified
-before submitting: `make lint` (ruff, ruff format, mypy) clean, `make test` 126
-passing, `forge test` 51 passing, plus the on-chain lifecycle run end to end against
-live Arc testnet with every transaction linked above.
+contracts, the Python chain package, the channel rail, the Circle integrations, the
+tests and this README. The design, the review and the verification were done by the
+author. Verified before submitting: `make lint` (ruff, ruff format, mypy) clean,
+`make test` 196 passing, `forge test` 51 passing, plus the on-chain lifecycle run end
+to end against live Arc testnet with every transaction linked above.
 
