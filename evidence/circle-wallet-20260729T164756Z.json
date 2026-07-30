@@ -1,0 +1,62 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "mode": "live",
+  "steps": [
+    {
+      "step": "wallet",
+      "id": "62f9550a-59d8-54bc-a044-c7d97c442b78",
+      "address": "0x5074b92189e295f46597037f3b972786578d05d2",
+      "blockchain": "ARC-TESTNET",
+      "accountType": "EOA",
+      "custodyType": "DEVELOPER",
+      "state": "LIVE",
+      "walletSetId": "d08c202f-3f7b-5c3c-8d33-fe127f43b331",
+      "backend": "circle-developer-controlled",
+      "usdcAtomic": 0,
+      "txCount": 0
+    },
+    {
+      "step": "voucher",
+      "digestLocal": "0x1935a4819784937d889e9219af78d6dcd267724dceab134ebfb0776cee5f1bfb",
+      "digestOnchain": "0x1935a4819784937d889e9219af78d6dcd267724dceab134ebfb0776cee5f1bfb",
+      "digestsAgree": true,
+      "signature": "0xdc4033d323c9e7dfd05790235766f0b3743a106b6c976ff4a1d81a5817e441b514617720e99812261cee04e94952deeed812657018d2297a443692a7de147bef1c",
+      "recovered": "0x5074B92189e295f46597037F3b972786578D05d2",
+      "recoveredMatchesWallet": true
+    },
+    {
+      "step": "local-signer",
+      "backend": "local",
+      "recovered": "0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4"
+    },
+    {
+      "step": "fund",
+      "txHash": "0x6007b636612f6bc0b597d57de8382385d6adb63a321683a39db2e34164163eb6",
+      "amountAtomic": 50000,
+      "url": "https://testnet.arcscan.app/tx/0x6007b636612f6bc0b597d57de8382385d6adb63a321683a39db2e34164163eb6"
+    },
+    {
+      "step": "authorization",
+      "authorizer": "0x5074B92189e295f46597037F3b972786578D05d2",
+      "recipient": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+      "valueAtomic": 20000,
+      "nonce": "0xa8ace496bb6226f18f0f6e6f4d618e63f9a4e6e0673a894083da03280eb45022",
+      "signature": "0x9e085f60109ea53041f8f0870d03bdb5eab9e1e57628e8adff1c50aea4200e9b2a075a37a53ac9ce4064df091f8dda3c57832779594986f21c0627e50b732bca1b",
+      "recovered": "0x5074B92189e295f46597037F3b972786578D05d2",
+      "ethCall": "ok",
+      "calldata": "0xcf0929950000000000000000000000005074b92189e295f46597037f3b972786578d05d2000000000000000000000000db6c6340342e71a63cd11ebac2185204b77777770000000000000000000000000000000000000000000000000000000000004e200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006a6a3cc5a8ace496bb6226f18f0f6e6f4d618e63f9a4e6e0673a894083da03280eb4502200000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000419e085f60109ea53041f8f0870d03bdb5eab9e1e57628e8adff1c50aea4200e9b2a075a37a53ac9ce4064df091f8dda3c57832779594986f21c0627e50b732bca1b00000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "step": "settled",
+      "txHash": "0xfd1742ab87070957f616b701985fd2a877b8b812333ef442e2305a64f77f5bcf",
+      "url": "https://testnet.arcscan.app/tx/0xfd1742ab87070957f616b701985fd2a877b8b812333ef442e2305a64f77f5bcf",
+      "gasUsed": 87547,
+      "walletBeforeAtomic": 50000,
+      "walletAfterAtomic": 30000,
+      "recipientBeforeAtomic": 207389429,
+      "recipientAfterAtomic": 207407240,
+      "walletTxCount": 0
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "mode": "dry-run",
+  "timestamp": "20260729T172022Z",
+  "iris": "https://iris-api-sandbox.circle.com",
+  "route": {
+    "sourceDomain": {
+      "expected": 0,
+      "onchain": 0
+    },
+    "destinationDomain": {
+      "expected": 26,
+      "onchain": 26
+    },
+    "destinationLocalToken": "0x3600000000000000000000000000000000000000",
+    "ok": true
+  },
+  "plan": {
+    "source": "eth-sepolia",
+    "sourceDomain": 0,
+    "destination": "arc-testnet",
+    "destinationDomain": 26,
+    "sender": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "recipient": "0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4",
+    "thresholdAtomic": 10000000,
+    "destinationBalanceAtomic": 10748060,
+    "sourceBalanceAtomic": 500000,
+    "deficitAtomic": 0,
+    "amountAtomic": 0,
+    "maxFeeAtomic": 0,
+    "feeBps": 1.0,
+    "finalityThreshold": 1000,
+    "allowanceAtomic": 0,
+    "needed": false,
+    "funded": true,
+    "needsApproval": false,
+    "minimumReceivedAtomic": 0,
+    "calls": []
+  },
+  "sourceGasWei": 211393903480055574,
+  "blockers": [
+    "destination is already above the threshold, pass --force to bridge"
+  ]
+}
