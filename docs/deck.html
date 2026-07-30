@@ -107,9 +107,31 @@
   </table>
   <div class="grid g3">
     <div class="card"><h3>Payer transactions sent</h3><div class="stat num">0</div><p>Before and after every run</p></div>
-    <div class="card"><h3>Tests</h3><div class="stat">51 + 151</div><p>Foundry and pytest, mypy strict clean</p></div>
+    <div class="card"><h3>Tests</h3><div class="stat">51 + 196</div><p>Foundry and pytest, mypy strict clean</p></div>
     <div class="card"><h3>Contracts live</h3><div class="stat">3</div><p>Channel, guard, registry</p></div>
   </div>
+</section>
+
+<section>
+  <span class="tag">Circle's rails</span>
+  <h2>Used, not named</h2>
+  <p>MoonWalk already ran on Circle rails: USDC on Arc, EIP-3009 authorizations, x402 over HTTP. Two of Circle's own services are now in the code and exercised live, and four more were tried and rejected with a written reason.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Developer-controlled Wallets</h3>
+      <p>The signer is an interface, so the key can live inside Circle instead of this process. Circle signed a channel voucher for chain 5042002 and the digest matched the channel's own <span class="mono">voucherHash()</span> view on Arc byte for byte, then signed an EIP-3009 authorization a relayer submitted. USDC left the custodied wallet with that wallet sending no transaction and paying no gas.</p>
+    </div>
+    <div class="card">
+      <h3>CCTP V2 with Iris</h3>
+      <p>The agent refills its own Arc balance: burn on Ethereum Sepolia, wait for the attestation, mint on Arc. Three real transfers, six transactions, one of them decided by the script itself when the balance fell under its threshold. Circle charged <span class="num">$0.00005</span> of the $0.000063 allowed.</p>
+    </div>
+  </div>
+  <table>
+    <tr><th>What</th><th>Result</th><th>Transaction</th></tr>
+    <tr><td>Circle's signature, submitted by a relayer</td><td>USDC moved, wallet transaction count 0</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0xfd1742ab87070957f616b701985fd2a877b8b812333ef442e2305a64f77f5bcf">0xfd1742ab…</a></td></tr>
+    <tr><td>Threshold-driven refill, Sepolia to Arc</td><td>$0.49995 minted, mint gas paid in USDC</td><td class="mono"><a href="https://testnet.arcscan.app/tx/0xe65307d2c87e6702f1619abd3ead31df3bd16c06160b8f5bc3d329de593d1d17">0xe65307d2…</a></td></tr>
+  </table>
+  <p class="lead">Gateway is read only here on purpose, so the comparison with our own channel is written against real numbers. Gateway Nanopayments, the Faucet API, Paymaster and StableFX each have a reason for not being used, in docs/CIRCLE-INTEGRATIONS.md.</p>
 </section>
 
 <section>
