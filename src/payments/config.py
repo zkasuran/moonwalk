@@ -18,7 +18,10 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# This lane's own .env is the source of truth, so it overrides ambient exports.
+# Without override= a stale OPENAI_BASE_URL left in the shell silently redirects
+# the agent's reasoning to a different endpoint than the one configured here.
+load_dotenv(override=True)
 
 # Arc testnet
 ARC_NETWORK = os.getenv("ARC_NETWORK", "eip155:5042002")
@@ -59,7 +62,7 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
 # here instead of Anthropic. OPENAI_BASE_URL should include the /v1 suffix.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "mimo-v2.5-pro")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")
 
 # Force a provider: "openai" | "anthropic" | "" (auto: openai if configured, else
 # anthropic). The agent's reasoning is free either way; USDC only pays for tools.

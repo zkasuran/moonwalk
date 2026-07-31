@@ -16,7 +16,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)  # this lane's .env wins over ambient exports
 
 ARC_RPC_URL = os.getenv("ARC_RPC_URL", "https://rpc.testnet.arc.network")
 ARC_CHAIN_ID = int(os.getenv("ARC_CHAIN_ID", "5042002"))

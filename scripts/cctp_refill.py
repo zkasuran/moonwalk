@@ -43,7 +43,7 @@ from web3 import Web3  # noqa: E402
 
 from src.circle import cctp  # noqa: E402
 
-load_dotenv()
+load_dotenv(override=True)  # this lane's .env wins over ambient exports
 
 
 def usd(atomic: int) -> str:
