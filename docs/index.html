@@ -261,6 +261,8 @@
       <a href="#proof" class="hide">On-chain proof</a>
       <a href="#channel" class="hide">Live channel</a>
       <a href="#market" class="hide">Live catalog</a>
+      <a href="#circle" class="hide">Circle</a>
+      <a href="deck.html" class="hide">Deck</a>
       <a class="btn btn-ghost" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
@@ -445,6 +447,26 @@
     </div>
     <p class="sub" style="margin-bottom:34px;font-size:15.5px">Payer <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> went from 9.788000 to 9.758000 USDC, exactly the $0.03 that was metered. Its transaction count was <b>0 before and 0 after</b>. Thirty paid calls, a deposit, a batch settlement and a close, with nothing sent from the payer. The 30 vouchers were also hashed locally and checked against the contract's own <span class="mono">voucherHash</span> view before the batch went out.</p>
 
+    <div class="proof" style="margin-bottom:20px">
+      <div class="head">
+        <span>the marketplace · one member listing and one admin approval · 2026-07-31</span>
+        <span>both submitted by the service, which pays the gas</span>
+      </div>
+      <div class="row-tx">
+        <span class="what">register · a member's priced service, payTo is their wallet</span>
+        <span class="res">$0.0010 per call, not buyable yet</span>
+        <span class="amt">on-chain</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x51f129449bc8bd8c28a51984a1f2185a5cec8517c63b12bd67e19830e4c41770" target="_blank" rel="noopener">51f12944 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">setVerified · the namespace admin approves it</span>
+        <span class="res">buyable from this block, a reprice drops it</span>
+        <span class="amt">on-chain</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xf07f9c2ae748a051801168b181f3d960ab4245d0db2a284691a7cb676d1230c7" target="_blank" rel="noopener">f07f9c2a ↗</a> <span class="st">✓</span></span>
+      </div>
+    </div>
+    <p class="sub" style="margin-bottom:34px;font-size:15.5px">Between those two transactions the agent's own view of the catalog was empty and the admin's view showed the listing as pending, which is the panel further down reading the same contract. The first listing in a server also claims that server's namespace and pins the $0.01 per-call ceiling as <span class="mono">namespaceMaxPrice</span>, so the contract refuses an over-priced listing even if our service is wrong about its own rules. Receipts in <span class="mono">evidence/registry-marketplace-2026-07-31.json</span>.</p>
+
     <div class="proof">
       <div class="head">
         <span>the per-call x402 rail · agent <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> → service <span class="mono" style="color:var(--muted)">0xDB6c…7777</span></span>
@@ -541,12 +563,89 @@
     <div class="judge">
       <div class="jc"><div class="w">3</div><h4>contracts live</h4><p>NanoChannel, SpendGuard and ServiceRegistry, all on Arc testnet.</p></div>
       <div class="jc"><div class="w">51</div><h4>forge tests</h4><p>Including a fuzz test over redeem and cases for malleable and stale vouchers.</p></div>
-      <div class="jc"><div class="w">126</div><h4>pytest tests</h4><p>Deterministic and offline. ruff and mypy clean on top.</p></div>
+      <div class="jc"><div class="w">199</div><h4>pytest tests</h4><p>Deterministic and offline, network and model calls mocked. ruff and mypy strict clean over 32 modules on top.</p></div>
       <div class="jc"><div class="w">0</div><h4>payer transactions</h4><p>Measured before and after a 30-call run, deposit and close included.</p></div>
     </div>
     <div class="roadmap">
       <span class="badge">Lineage</span>
       <p><b>MoonWalk grew out of NanoPay.</b> The Discord agent and the per-call x402 rail were built for the Lepton Agents Hackathon (Canteen × Circle). NanoPay is still the agent surface and the live bot. New for the Encode × Circle Programmable Money Hackathon: the three contracts, the payment channel with cumulative vouchers, the on-chain per-person caps, the ServiceRegistry, the dual-rail 402 with its <span class="mono" style="color:var(--muted)">/channel</span> endpoints plus the proof run above. The rails are the new work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CIRCLE -->
+<section id="circle">
+  <div class="wrap">
+    <div class="eyebrow">Circle's own products</div>
+    <h2>Used, not named.</h2>
+    <p class="sub">MoonWalk already ran on Circle rails: USDC on Arc, EIP-3009 gasless authorizations, x402 over HTTP. Two of Circle's own services are in the code and were exercised live, one is read only on purpose, and three were rejected with a reason rather than listed as future work. The full write-up, including what is still UNVERIFIED, is <a href="CIRCLE-INTEGRATIONS.md">docs/CIRCLE-INTEGRATIONS.md</a>.</p>
+    <div class="split">
+      <div class="card">
+        <h3>A wallet whose key we never hold</h3>
+        <p>The signer is an interface, so <span class="mono" style="color:var(--muted)">MOONWALK_SIGNER=circle</span> swaps the local key for a developer-controlled Circle wallet. Circle signed a channel voucher for chain 5042002 and the digest matched <span class="mono">NanoChannel.voucherHash()</span> on Arc byte for byte, then signed an EIP-3009 authorization a relayer submitted: USDC left the Circle-custodied wallet <span class="mono" style="color:var(--green)">0x5074…05d2</span> while that wallet sent no transaction and paid no gas, transaction count <span class="ok mono">0</span>. Local signing stays the default, because a voucher per call cannot afford an HTTPS round trip.</p>
+      </div>
+      <div class="card">
+        <h3>The agent refills its own balance</h3>
+        <p>A threshold-driven CCTP V2 transfer the script decided on its own: burn on Ethereum Sepolia, wait for Circle's Iris attestation, mint on Arc. The dry run is the default, so it reads both chains, asks Iris for the live fee and <span class="mono">eth_call</span>s the calldata before anything is signed. Circle charged $0.00005 of the $0.000063 the plan allowed and $0.49995 was minted on Arc.</p>
+      </div>
+    </div>
+    <div class="proof" style="margin-top:20px">
+      <div class="head">
+        <span>Circle, live · 2026-07-29 · receipts in <span class="mono" style="color:var(--muted)">evidence/circle-wallet-*.json</span> and <span class="mono" style="color:var(--muted)">evidence/cctp-live-*.json</span></span>
+        <span>every one status 1</span>
+      </div>
+      <div class="row-tx">
+        <span class="what">Circle wallet signs, a relayer submits</span>
+        <span class="res">$0.02 moved out of a wallet that sent nothing, 87,547 gas</span>
+        <span class="amt">Arc</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xfd1742ab87070957f616b701985fd2a877b8b812333ef442e2305a64f77f5bcf" target="_blank" rel="noopener">fd1742ab ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">depositForBurn · CCTP V2, domain 0 to 26</span>
+        <span class="res">$0.50 burned, 109,103 gas</span>
+        <span class="amt">Sepolia</span>
+        <span><a class="tx" href="https://sepolia.etherscan.io/tx/0x1353e27eae83eb40e2ec2d9c098ff57cba47036959f47c7162abe5578a3ce453" target="_blank" rel="noopener">1353e27e ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">receiveMessage · Iris attestation consistent</span>
+        <span class="res">$0.49995 minted on Arc, 175,785 gas</span>
+        <span class="amt">Arc</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xe65307d2c87e6702f1619abd3ead31df3bd16c06160b8f5bc3d329de593d1d17" target="_blank" rel="noopener">e65307d2 ↗</a> <span class="st">✓</span></span>
+      </div>
+    </div>
+    <div class="roadmap">
+      <span class="badge">Honest about the rest</span>
+      <p>Gateway is read only here, for balances and wallet state. Gateway Nanopayments overlaps with this project and the doc reasons about it instead of pretending it does not exist. The Faucet API returns HTTP 403 for our key. Paymaster and StableFX are not on Arc or are permissioned. Wallet creation through the API, <span class="mono">signTransaction</span> and contract-execution transactions are not wired, so a Circle-only deployment would still need a local key to submit settlements.</p>
+    </div>
+  </div>
+</section>
+
+<!-- VERIFY -->
+<section id="verify" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Check it yourself</div>
+    <h2>Nothing here needs our uptime.</h2>
+    <p class="sub">The contracts are on Arc and the repo is public, so every number on this page can be re-derived from a clone. The first command is offline. The second spends real testnet USDC and needs two keys in <span class="mono" style="color:var(--muted)">.env</span>.</p>
+    <div class="card-console" style="margin-top:26px">
+      <div class="cc-bar"><span class="lamp"></span><span class="lamp"></span><span class="lamp g"></span><span class="cc-title">clone → verify</span></div>
+      <div class="cc-body">
+        <div class="line"><span class="prompt">$</span> <span class="u">git clone https://github.com/zkasuran/moonwalk &amp;&amp; cd moonwalk</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="u">cd contracts &amp;&amp; forge test</span> <span class="sys">→ 51 passed, 0 failed</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="u">make dev-install &amp;&amp; make lint &amp;&amp; make test</span> <span class="sys">→ ruff and mypy clean over 32 modules, 199 passed</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="u">make channel-demo</span> <span class="sys">→ the whole lifecycle on Arc, writes evidence/channel-&lt;stamp&gt;.json</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="u">.venv/bin/python scripts/open_channel.py</span> <span class="sys">→ reads the production channel straight off the chain</span></div>
+        <div class="line sys">Every claim above traces to a file in <span class="mono">evidence/</span>, written by the run that produced it.</div>
+      </div>
+    </div>
+    <div class="judge-try" style="margin-top:22px">
+      <div class="card">
+        <h3>Read the design</h3>
+        <p><a href="ARCHITECTURE.md">Architecture notes</a> for the voucher and cap mechanics with the EIP-712 type strings verbatim, <a href="CIRCLE-INTEGRATIONS.md">the Circle write-up</a> for what is proven and what is not, and the <a href="https://github.com/zkasuran/moonwalk#readme" target="_blank" rel="noopener">README</a> for the honest-limits list in full.</p>
+      </div>
+      <div class="card">
+        <h3>Read the pitch</h3>
+        <p>The deck is on this site: <a href="deck.html">eight slides in the browser</a> or <a href="MoonWalk-deck.pdf">the 16:9 PDF</a>. Same numbers as this page, same receipts.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -621,7 +720,8 @@
     </div>
     <div style="text-align:right">
       <div>Built for the Encode × Circle Programmable Money Hackathon, on Arc</div>
-      <div style="margin-top:8px"><a href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">github.com/zkasuran/moonwalk</a> · <a href="ARCHITECTURE.md">architecture notes</a></div>
+      <div style="margin-top:8px"><a href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">github.com/zkasuran/moonwalk</a> · <a href="ARCHITECTURE.md">architecture notes</a> · <a href="CIRCLE-INTEGRATIONS.md">Circle write-up</a> · <a href="deck.html">deck</a> · <a href="MoonWalk-deck.pdf">PDF</a></div>
+      <div style="margin-top:8px;max-width:520px;margin-left:auto">AI assistance (Claude, Anthropic) was used in developing MoonWalk. The design, review and verification were done by the author, and every on-chain number on this page comes from a run whose receipts are in the repo.</div>
     </div>
   </div>
 </footer>
