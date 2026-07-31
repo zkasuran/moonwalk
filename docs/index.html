@@ -260,6 +260,7 @@
       <a href="#how" class="hide">How it works</a>
       <a href="#proof" class="hide">On-chain proof</a>
       <a href="#channel" class="hide">Live channel</a>
+      <a href="#market" class="hide">Live catalog</a>
       <a class="btn btn-ghost" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
@@ -503,6 +504,22 @@
   </div>
 </section>
 
+<!-- LIVE MARKETPLACE -->
+<section id="market" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Read live from the registry</div>
+    <h2>The catalog the agent is allowed to buy.</h2>
+    <p class="sub">This panel calls <span class="mono" style="color:var(--muted)">GET /market/services/&lt;guildId&gt;?all=true</span>, which the service answers by reading the ServiceRegistry contract rather than its own database. A listing appears the moment a member runs <span class="mono" style="color:var(--muted)">/sell</span>, and it only becomes buyable when an admin runs <span class="mono" style="color:var(--muted)">/verify-service</span>, which is a transaction from the namespace admin. The response names which source answered, and this panel repeats it instead of pretending.</p>
+    <div class="panel">
+      <div class="phead">
+        <span id="mktHead">catalog: reading…</span>
+        <span class="status-pill" id="mktPill">fetching</span>
+      </div>
+      <div class="notice" id="mktBody">Asking the service for the on-chain catalog.</div>
+    </div>
+  </div>
+</section>
+
 <!-- WHY -->
 <section id="why">
   <div class="wrap">
@@ -579,7 +596,7 @@
       </details>
       <details>
         <summary>What are the limits you are not hiding?</summary>
-        <p>Testnet only, because Arc has no mainnet. The challenge window on this deploy is one hour, so a service offline for an hour loses whatever it had not redeemed. The service trusts nothing but it does have to keep its vouchers: lose that store and it loses the right to collect. ServiceRegistry is deployed and tested, yet the Discord marketplace still reads its catalog from SQLite. The contracts are unaudited. The full list is in the README.</p>
+        <p>Testnet only, because Arc has no mainnet. The challenge window on this deploy is one hour, so a service offline for an hour loses whatever it had not redeemed. The service trusts nothing but it does have to keep its vouchers: lose that store and it loses the right to collect. The Discord marketplace writes to the ServiceRegistry, and the service wallet submits those transactions because a member has no wallet or gas, so a listing records the operator as its lister while payTo is the member's own address. The contracts are unaudited. The full list is in the README.</p>
       </details>
     </div>
   </div>
@@ -919,6 +936,106 @@
   }
   loadChannel();
   setInterval(loadChannel, 30000);
+
+  // ---- live marketplace panel -------------------------------------------
+  // Reads GET /market/services/<guildId>?all=true, which the service answers from
+  // the ServiceRegistry contract. `source` in that response says whether the chain
+  // or the service's mirror answered, and this panel prints whichever it was: a
+  // price that came out of a database must never look like a price that came out
+  // of consensus.
+  const MARKET_GUILD = params.get("guild") || "1416577435369214084";
+  const mktHead = document.getElementById("mktHead");
+  const mktPill = document.getElementById("mktPill");
+  const mktBody = document.getElementById("mktBody");
+  const REGISTRY = "0x774E5F27b572450F5D21FE3929B45557F3468F9b";
+
+  function mktFail(headline, detail) {
+    if (!mktBody) return;
+    mktPill.textContent = "unavailable";
+    mktPill.classList.remove("live");
+    mktHead.textContent = "catalog: not read";
+    mktBody.className = "notice";
+    mktBody.innerHTML = "<b>" + esc(headline) + "</b>" +
+      (detail ? '<span class="why">' + esc(detail) + "</span>" : "");
+  }
+
+  function hostOf(url) {
+    try { return new URL(String(url)).host; } catch (e) { return String(url || ""); }
+  }
+
+  function renderMarket(d) {
+    const services = Array.isArray(d.services) ? d.services : [];
+    const chain = d.source === "chain";
+    mktPill.textContent = chain ? "● live" : "mirror";
+    if (chain) mktPill.classList.add("live"); else mktPill.classList.remove("live");
+    mktHead.innerHTML = (chain
+      ? 'read from <a class="tx" href="https://testnet.arcscan.app/address/' + REGISTRY +
+        '" target="_blank" rel="noopener">ServiceRegistry ↗</a>'
+      : "read from the service's mirror, the registry was unreachable") +
+      ' · namespace <span class="mono">' + esc(shortHex(d.namespace || "")) + "</span>";
+
+    const buyable = services.filter((s) => s.verified).length;
+    let html = '<div class="stats">' +
+      stat("listings", String(services.length), chain ? "on the contract" : "in the mirror") +
+      stat("buyable", String(buyable), "an admin approved these") +
+      stat("waiting", String(services.length - buyable), "listed, not approved") +
+      "</div>";
+
+    if (!services.length) {
+      html += '<div class="notice" style="border-top:1px solid var(--line)">Nothing is listed in ' +
+        "this server yet. Any member can list a priced endpoint with <span class=\"mono\">/sell</span>, " +
+        "and the listing is a transaction before it is a row.</div>";
+    } else {
+      html += '<div class="prow h"><span>service</span><span>price</span><span>state</span>' +
+        "<span>endpoint</span></div>" +
+        services.slice(0, 8).map((s) => {
+          const state = s.enabled === false
+            ? "disabled"
+            : (s.verified ? "buyable" : "waiting on an admin");
+          return '<div class="prow"><span class="who">' + esc(String(s.name || "")) +
+            '</span><span class="mono" style="font-size:13px">' +
+            esc(String(s.price_usdc || usd6(s.price_atomic))) + "</span><span>" + esc(state) +
+            '</span><span class="mono" style="font-size:13px">' + esc(hostOf(s.url)) +
+            "</span></div>";
+        }).join("");
+    }
+    mktBody.className = "";
+    mktBody.innerHTML = html;
+  }
+
+  async function loadMarket() {
+    if (!mktBody) return;
+    let r;
+    try {
+      r = await fetch(API + "/market/services/" + encodeURIComponent(MARKET_GUILD) + "?all=true",
+        { cache: "no-store" });
+    } catch (e) {
+      mktFail("Could not reach the service.",
+        "GET " + API + "/market/services/" + MARKET_GUILD + " failed: " +
+        (e && e.message ? e.message : String(e)));
+      return;
+    }
+    if (!r.ok) {
+      mktFail("The service answered " + r.status + " for the catalog.",
+        "This deployment does not serve the marketplace endpoint. The registry is on-chain " +
+        "regardless, at " + REGISTRY + ".");
+      return;
+    }
+    let d;
+    try {
+      d = await r.json();
+    } catch (e) {
+      mktFail("The service returned something that is not JSON.", String(e));
+      return;
+    }
+    try {
+      renderMarket(d);
+    } catch (e) {
+      mktFail("The catalog response was not the shape this page expects.", String(e));
+    }
+  }
+  loadMarket();
+  setInterval(loadMarket, 30000);
 </script>
 </body>
 </html>
