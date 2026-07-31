@@ -21,7 +21,7 @@ with evidence.
 | StableFX | permissioned, no public call shapes | none |
 
 Offline tests: `tests/test_circle_wallets.py` (20) and `tests/test_circle_cctp.py`
-(35). They never touch a network. `make test` is 196 passing, `make lint` is clean
+(35). They never touch a network. `make test` is 199 passing, `make lint` is clean
 (ruff, ruff format, mypy strict on `src/`).
 
 ## 1. Circle developer-controlled wallets as the agent's signer

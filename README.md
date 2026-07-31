@@ -9,7 +9,7 @@ stablecoin-native L1.
 
 [![live on Arc](https://img.shields.io/badge/live_on-Arc_testnet_5042002-1f1f1f)](https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568)
 [![forge tests](https://img.shields.io/badge/forge_tests-51_passing-0f8a56)](#tests-and-verification)
-[![pytest](https://img.shields.io/badge/pytest-196_passing-0f8a56)](#tests-and-verification)
+[![pytest](https://img.shields.io/badge/pytest-199_passing-0f8a56)](#tests-and-verification)
 [![rails](https://img.shields.io/badge/rails-x402_%2B_payment_channel-2775CA)](#how-it-works)
 
 ## The problem
@@ -53,16 +53,15 @@ The agent surface is NanoPay, a Discord bot that is live and always on.
 - **Landing page**: https://zkasuran.github.io/moonwalk/
 - **Source**: https://github.com/zkasuran/moonwalk
 
-One caveat worth stating plainly. The always-on deployment is still serving the
-previous build, so `/ask` pays per call over x402 there and `/channel` and `/cap`
-appear once it is redeployed from this commit. You can check for yourself:
-`https://nanopay-api.loadline.xyz/channel` answers 404 today and will answer with
-the channel state after the rollout. Everything below runs against the same live
+The always-on deployment runs this commit, so the channel commands are live:
+`/ask <question>` for the agent loop, `/channel` for the channel state and the
+per-person meters, `/cap` for an admin to set someone's on-chain limit, `/sell` to
+list a priced service on-chain and `/verify-service` for an admin to approve one.
+Check the service without Discord: `https://nanopay-api.loadline.xyz/channel`
+answers with the live channel state and
+`https://nanopay-api.loadline.xyz/market/services/1416577435369214084` answers with
+the catalog read from the registry. Everything below also runs against the same live
 contracts from a clone, which is the part that does not depend on our uptime.
-
-In Discord, once rolled out: `/ask <question>` for the agent loop, `/channel` for
-the channel state and the per-person meters, `/cap` for an admin to set someone's
-on-chain limit.
 
 Reproduce the on-chain proof yourself. The first command is offline, the second
 spends real testnet USDC and needs `AGENT_PRIVATE_KEY` plus
@@ -135,6 +134,26 @@ Open right now, read with `scripts/open_channel.py`:
 | deposit / redeemed / outstanding | 0.500000 / 0.000000 / 0.500000 USDC |
 | guarded | yes, default cap $0.05 per person per 86,400s |
 | cap owner | the service, so the payer never needs to send a transaction |
+
+### The marketplace, on-chain
+
+`/sell` and `/verify-service` write to the ServiceRegistry, so the price the agent
+was told and the approval that made a service buyable are public facts. One run
+through the live endpoints on 2026-07-31, receipts in
+[`evidence/registry-marketplace-2026-07-31.json`](evidence/registry-marketplace-2026-07-31.json):
+
+| Step | Tx | What happened |
+|---|---|---|
+| a member lists a service | [`51f12944`](https://testnet.arcscan.app/tx/0x51f129449bc8bd8c28a51984a1f2185a5cec8517c63b12bd67e19830e4c41770) | listed at $0.0010 with the member's wallet as `payTo`, invisible to the agent |
+| an admin approves it | [`f07f9c2a`](https://testnet.arcscan.app/tx/0xf07f9c2ae748a051801168b181f3d960ab4245d0db2a284691a7cb676d1230c7) | the namespace admin's transaction, and only now is it buyable |
+
+Between the two, `GET /market/services/<guild>` returned an empty catalog for the
+agent and showed the listing under `?all=true` for the admin. The first listing in a
+server also claims its namespace and pins the $0.01 ceiling on-chain
+(`namespaceMaxPrice`), so the contract refuses an over-priced listing even if this
+service is wrong about its own rules, and a price change drops the verification.
+The operator submits both transactions, because a Discord member has no wallet and
+no gas.
 
 ## How it works
 
@@ -226,12 +245,12 @@ marketplace listing flow, the landing page.
 
 New here: the three Solidity contracts and their 51 tests, the payment channel with
 cumulative per-subject vouchers, per-subject spend caps enforced on-chain, the
-`ServiceRegistry`, the `src/chain/` Python package with committed ABIs, the
-local-versus-contract digest check, the dual-rail 402, the `GET /channel`,
-`GET /channel/quote`, `GET /channel/cap`, `POST /channel/cap` and
-`POST /channel/settle` endpoints, the `/channel` and `/cap` Discord commands, the
-live proof run and the production channel, the Circle developer-controlled wallet
-signer and the CCTP V2 self-refill in `src/circle/`.
+`ServiceRegistry` with `/sell` and `/verify-service` writing to it, the `src/chain/`
+Python package with committed ABIs, the local-versus-contract digest check, the
+dual-rail 402, the `GET /channel`, `GET /channel/quote`, `GET /channel/cap`,
+`POST /channel/cap` and `POST /channel/settle` endpoints, the `/channel` and `/cap`
+Discord commands, the live proof run and the production channel, the Circle
+developer-controlled wallet signer and the CCTP V2 self-refill in `src/circle/`.
 
 ## Where the code is
 
@@ -258,11 +277,11 @@ make test                         # pytest
 cd contracts && forge test        # the contracts
 ```
 
-Run on 2026-07-30, from this working tree:
+Run on 2026-07-31, from this working tree:
 
 ```
 $ make test
-196 passed, 2 warnings in 1.39s
+199 passed, 2 warnings in 1.51s
 
 $ make lint
 uv run ruff check src/ tests/           All checks passed!
@@ -297,6 +316,11 @@ separately against live Arc testnet and is linked above.
   guarded channel with no default cap and no subject cap cannot redeem a single
   voucher. That is the safe direction, but it does mean opening a channel is two
   steps, not one.
+- **A member's listing is submitted by the operator.** `/sell` writes to the
+  ServiceRegistry, and the transaction comes from the service wallet, because a
+  Discord member has no wallet and no gas. `payTo` is the member's own address, so
+  the USDC goes to them, and the listing records the operator as the lister. A
+  member who wants to be the on-chain lister has to call `register` themselves.
 - **The service trusts nothing, but it does have to hold the vouchers.** Every check
   it makes before delivering is the check the contract will make. It still has to
   keep the signatures: lose the voucher store and it loses the right to collect what
@@ -308,13 +332,6 @@ separately against live Arc testnet and is linked above.
 - **A voucher lives 24 hours by default** (`MOONWALK_VOUCHER_TTL`). A leaked voucher
   is worth its own cumulative and nothing more, because the contract only ever pays
   the delta over what that subject already settled, but the window is real.
-- **ServiceRegistry is deployed and tested, not yet wired into Discord.** The
-  `/sell` and `/verify-service` flow still reads its catalog from SQLite. Moving it
-  onto the on-chain registry is the next step. The client for it is already in
-  `src/chain/registry.py`.
-- **The public API deployment is still on the pre-channel build**, so `GET /channel`
-  returns 404 there until it is redeployed. The channel itself is open on-chain and
-  `scripts/open_channel.py` reads it directly.
 - **The Circle integrations carry their own UNVERIFIED list.** Circle signing is
   proven for EIP-712 and EIP-3009 on Arc, but wallet creation through the API,
   `signTransaction` and contract-execution transactions are not wired, so a
@@ -335,6 +352,6 @@ AI assistance (Claude, Anthropic) was used in developing this project: the
 contracts, the Python chain package, the channel rail, the Circle integrations, the
 tests and this README. The design, the review and the verification were done by the
 author. Verified before submitting: `make lint` (ruff, ruff format, mypy) clean,
-`make test` 196 passing, `forge test` 51 passing, plus the on-chain lifecycle run end
+`make test` 199 passing, `forge test` 51 passing, plus the on-chain lifecycle run end
 to end against live Arc testnet with every transaction linked above.
 

@@ -208,6 +208,25 @@ backend catalog it is a row that was true at the time and nobody can prove it.
 `register` also refuses an endpoint that is not `https://`, on the grounds that a
 registry other agents read should not advertise a plaintext endpoint.
 
+### How Discord reaches it
+
+`/sell` posts to `POST /market/list` and `/verify-service` to `POST /market/verify`,
+and both go to the contract. The service wallet submits, because a Discord member has
+no wallet and no gas, so the listing records the operator as `lister` while `payTo`
+is the member's own address: the member is paid, the operator carries the gas. The
+first listing in a server claims the namespace and pins the API's $0.01 ceiling as
+`namespaceMaxPrice`, which moves that limit from this service's opinion into the
+contract. Verification needs two things to agree, the caller's Discord permission and
+the namespace admin the contract checks, and the transaction is the record of it.
+
+Writes fail closed and reads degrade. With no signer, or when the contract refuses,
+the listing is refused and reported under the contract's own error name rather than
+written to SQLite and called listed. `GET /market/services/{guild}` prefers the chain
+and falls back to this service's mirror when the chain cannot be read, saying which
+one answered, which is safe because `isBuyable` is still what authorises a payment.
+The mirror exists for the one fact the chain does not hold: which Discord account is
+behind a listing.
+
 ## The EIP-712 type strings
 
 Verbatim, as hashed by the contracts and by `src/chain/channel.py`.
