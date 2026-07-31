@@ -36,8 +36,8 @@ REQUIRED_FUNCTIONS = {
         "registerScope setDefaultCap setSubjectCap consume capOf usageOf remaining scopeOwner"
     ).split(),
     "ServiceRegistry": (
-        "serviceIdOf namespaceAdmin isBuyable getService idsOf claimNamespace register "
-        "setVerified setEnabled setPrice"
+        "serviceIdOf namespaceAdmin namespaceMaxPrice isBuyable getService idsOf claimNamespace "
+        "register setVerified setEnabled setPrice setMaxPrice"
     ).split(),
     "USDC": ["balanceOf"],
 }

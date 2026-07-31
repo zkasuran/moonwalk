@@ -9,7 +9,15 @@ from __future__ import annotations
 from .channel import ChannelClient, ChannelState, Voucher
 from .client import ArcClient, SentTx
 from .guard import Cap, GuardClient
-from .registry import RegistryClient, ServiceListing
+from .registry import (
+    NamespaceNotOwned,
+    PublishedListing,
+    RegistryClient,
+    RegistryPublisher,
+    ServiceListing,
+    build_publisher,
+    discord_namespace,
+)
 from .subjects import discord_subject, label_for, subject_hex
 
 __all__ = [
@@ -18,10 +26,15 @@ __all__ = [
     "ChannelClient",
     "ChannelState",
     "GuardClient",
+    "NamespaceNotOwned",
+    "PublishedListing",
     "RegistryClient",
+    "RegistryPublisher",
     "SentTx",
     "ServiceListing",
     "Voucher",
+    "build_publisher",
+    "discord_namespace",
     "discord_subject",
     "label_for",
     "subject_hex",

@@ -808,7 +808,7 @@ async def cmd_cap(
 )
 @app_commands.describe(
     name="Service name (a-z, 0-9, _)",
-    url="Public http(s) endpoint; the agent calls it with ?q=<request>",
+    url="Public https endpoint; the agent calls it with ?q=<request>",
     price="Price per call in USDC, e.g. 0.001 (max 0.01)",
     wallet="Your 0x wallet that receives the USDC",
     description="What the service answers, so the agent knows when to buy it",
@@ -839,18 +839,26 @@ async def cmd_sell(
         detail = resp.json().get("detail", resp.text[:200])
         await interaction.followup.send(f"Listing rejected: {detail}", ephemeral=True)
         return
+    listed = resp.json()
     embed = discord.Embed(
-        title=f"Listed: {name.strip().lower()}",
+        title=f"Listed on-chain: {name.strip().lower()}",
         description=(
-            "Your service is on this server's marketplace, pending admin review. "
+            "Your service is in this server's on-chain catalog, pending admin review. "
             "Once an admin runs `/verify-service`, the agent can discover it and "
-            "pay your wallet per call."
+            "pay your wallet per call. The price and the endpoint are public from now: "
+            "anyone can read what the agent was told before it paid."
         ),
         color=0xF59E0B,
     )
     embed.add_field(name="Price", value=f"${price:.4f} USDC per call", inline=True)
     embed.add_field(name="Pays to", value=f"`{wallet[:10]}…`", inline=True)
-    embed.set_footer(text="NanoPay marketplace • awaiting verification")
+    service_id = str(listed.get("service_id", ""))
+    if service_id:
+        embed.add_field(name="Service id", value=f"`{service_id[:18]}…`", inline=True)
+    explorer = str(listed.get("explorer", ""))
+    if explorer:
+        embed.add_field(name="Listing tx", value=f"[on Arc]({explorer})", inline=False)
+    embed.set_footer(text="MoonWalk ServiceRegistry • awaiting verification")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -880,9 +888,13 @@ async def cmd_verify_service(interaction: discord.Interaction, name: str) -> Non
         detail = resp.json().get("detail", resp.text[:200])
         await interaction.followup.send(f"Could not verify: {detail}", ephemeral=True)
         return
+    verified = resp.json()
+    explorer = str(verified.get("explorer", ""))
+    tail = f" Approval tx: <{explorer}>" if explorer else ""
     await interaction.followup.send(
-        f"`{name.strip().lower()}` is verified. The agent can now discover it in "
-        "/ask and pay the lister's wallet per call.",
+        f"`{name.strip().lower()}` is verified on-chain. The agent can now discover it "
+        f"in /ask and pay the lister's wallet per call. A price change drops the "
+        f"approval, so what you approved is what stays buyable.{tail}",
         ephemeral=True,
     )
 
@@ -896,22 +908,33 @@ async def cmd_services(interaction: discord.Interaction) -> None:
     assert bot._api is not None
     resp = await bot._api.get(f"/market/services/{interaction.guild_id or 'dm'}?all=true")
     resp.raise_for_status()
-    services = resp.json().get("services", [])
+    payload = resp.json()
+    services = payload.get("services", [])
+    on_chain = payload.get("source") == "chain"
     embed = discord.Embed(title="This server's marketplace", color=0x7C3AED)
     if not services:
         embed.description = (
             "No services listed yet. Any member can list one with `/sell`: "
-            "a public endpoint, a sub-cent price and the wallet that gets paid."
+            "a public https endpoint, a sub-cent price and the wallet that gets paid. "
+            "The listing goes on-chain, so the price the agent sees is public."
         )
     else:
         for s in services[:12]:
             status = "verified, agent can buy it" if s.get("verified") else "pending admin review"
+            if not s.get("enabled", True):
+                status = "disabled by the lister or an admin"
             embed.add_field(
                 name=f"{s['name']} · {s['price_usdc']}",
                 value=f"{s.get('description') or 'no description'}\n_{status}_",
                 inline=False,
             )
-    embed.set_footer(text="NanoPay marketplace • the agent pays listers directly")
+    embed.set_footer(
+        text=(
+            "MoonWalk ServiceRegistry on Arc • the agent pays listers directly"
+            if on_chain
+            else "Registry unreadable, showing this service's mirror"
+        )
+    )
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 

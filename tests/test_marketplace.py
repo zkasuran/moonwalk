@@ -1,23 +1,47 @@
 """Tests for the per-guild agent-to-agent marketplace.
 
-Covers the store CRUD, the listing/verify API endpoints, the market executor's
-SSRF guard and the planner resolving marketplace tools from a dynamic catalog.
-Network calls are monkeypatched so the suite stays offline.
+Covers the store CRUD, the on-chain listing and approval endpoints, the market
+executor's SSRF guard and the planner resolving marketplace tools from a dynamic
+catalog. Nothing here needs a node: the ServiceRegistry is stubbed with the same
+ids the contract computes, and the refusal names come from the committed ABI.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
+from eth_abi.abi import encode as abi_encode
+from eth_utils.crypto import keccak
 from fastapi.testclient import TestClient
 
 from src.agent import planner
 from src.agent.tools import TOOL_CATALOG, MarketToolSpec, market_tool
 from src.api import app as appmod
 from src.api import executor
+from src.chain.client import SentTx, error_selectors, load_abi
+from src.chain.registry import (
+    ZERO_ADDRESS,
+    PublishedListing,
+    ServiceListing,
+    discord_namespace,
+)
 from src.domain.models import MarketplaceService, PaymentRecord
 from src.payments.store import PaymentStore
+
+
+def keccak_id(namespace: bytes, name: str) -> bytes:
+    """The contract's own serviceIdOf: keccak(abi.encode(namespace, keccak(name)))."""
+    return bytes(keccak(abi_encode(["bytes32", "bytes32"], [namespace, keccak(text=name)])))
+
+
+def selector_for(error_name: str) -> str:
+    """The 4-byte selector of one ServiceRegistry error, read from the committed ABI."""
+    for selector, name in error_selectors(load_abi("ServiceRegistry")).items():
+        if name == error_name:
+            return selector
+    raise AssertionError(f"{error_name} is not an error in the committed ServiceRegistry ABI")
 
 
 @pytest.fixture
@@ -138,8 +162,56 @@ async def test_init_migrates_pre_marketplace_db(tmp_path) -> None:  # type: igno
 
 @pytest.fixture
 def client(store: PaymentStore, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """No registry signer, which is the fail-closed case."""
     monkeypatch.setattr(appmod, "store", store, raising=False)
+    monkeypatch.setattr(appmod, "market", None, raising=False)
     return TestClient(appmod.app)
+
+
+NAMESPACE = discord_namespace("g1")
+OPERATOR = "0x" + "11" * 20
+ASSET = "0x" + "22" * 20
+
+
+def _sent(tag: str) -> SentTx:
+    return SentTx(tx_hash="0x" + tag * 32, block_number=7, gas_used=100_000, status=1)
+
+
+class _FakeRegistry:
+    """Enough ServiceRegistry to exercise the endpoints offline.
+
+    Ids are keyed by namespace and name the way the contract keys them, so a
+    namespace mix-up fails here rather than on-chain.
+    """
+
+    def __init__(self) -> None:
+        self.services: dict[bytes, ServiceListing] = {}
+        self.ceilings: dict[bytes, int] = {}
+        self.admins: dict[bytes, str] = {}
+        self.reads_fail = False
+
+    def service_id(self, namespace: bytes, name: str) -> bytes:
+        return keccak_id(namespace, name)
+
+    def get(self, service_id: bytes) -> ServiceListing:
+        if self.reads_fail:
+            raise RuntimeError("no RPC")
+        found = self.services.get(service_id)
+        if found is not None:
+            return found
+        return ServiceListing(
+            service_id=service_id,
+            namespace=b"\x00" * 32,
+            lister=ZERO_ADDRESS,
+            pay_to=ZERO_ADDRESS,
+            asset=ZERO_ADDRESS,
+            price_atomic=0,
+            verified=False,
+            enabled=False,
+            name="",
+            description="",
+            endpoint="",
+        )
 
 
 _LIST_BODY = {
@@ -153,47 +225,182 @@ _LIST_BODY = {
 }
 
 
-def test_market_list_and_verify_flow(client: TestClient) -> None:
+class _FakePublisher:
+    """The RegistryPublisher surface the endpoints use, in memory."""
+
+    def __init__(self) -> None:
+        self.registry = _FakeRegistry()
+        self.address = OPERATOR
+        self.claimed: list[bytes] = []
+
+    def publish(
+        self,
+        namespace: bytes,
+        name: str,
+        description: str,
+        endpoint: str,
+        pay_to: str,
+        price_atomic: int,
+    ) -> PublishedListing:
+        service_id = self.registry.service_id(namespace, name)
+        if service_id in self.registry.services:
+            raise RuntimeError(selector_for("ServiceExists"))
+        claim = None
+        if namespace not in self.registry.admins:
+            self.registry.admins[namespace] = self.address
+            self.claimed.append(namespace)
+            claim = _sent("cc")
+        self.registry.ceilings[namespace] = appmod.MARKET_MAX_PRICE_ATOMIC
+        self.registry.services[service_id] = ServiceListing(
+            service_id=service_id,
+            namespace=namespace,
+            lister=self.address,
+            pay_to=pay_to,
+            asset=ASSET,
+            price_atomic=price_atomic,
+            verified=False,
+            enabled=True,
+            name=name,
+            description=description,
+            endpoint=endpoint,
+        )
+        return PublishedListing(service_id=service_id, listing=_sent("ab"), namespace_claim=claim)
+
+    def verify(self, service_id: bytes, verified: bool = True) -> SentTx:
+        listing = self.registry.services[service_id]
+        self.registry.services[service_id] = replace(listing, verified=verified)
+        return _sent("de")
+
+    def catalog(self, namespace: bytes, buyable_only: bool = False) -> list[ServiceListing]:
+        if self.registry.reads_fail:
+            raise RuntimeError("no RPC")
+        found = [s for s in self.registry.services.values() if s.namespace == namespace]
+        return [s for s in found if s.buyable] if buyable_only else found
+
+
+@pytest.fixture
+def market_client(
+    store: PaymentStore, monkeypatch: pytest.MonkeyPatch
+) -> tuple[TestClient, _FakePublisher]:
+    publisher = _FakePublisher()
+    monkeypatch.setattr(appmod, "store", store, raising=False)
+    monkeypatch.setattr(appmod, "market", publisher, raising=False)
+    return TestClient(appmod.app), publisher
+
+
+def test_market_list_and_verify_flow(market_client: tuple[TestClient, _FakePublisher]) -> None:
+    client, publisher = market_client
     r = client.post("/market/list", json=_LIST_BODY)
     assert r.status_code == 200
-    assert r.json()["verified"] is False
+    listed = r.json()
+    assert listed["verified"] is False
+    # The id is the contract's own, and the listing carries a transaction.
+    assert listed["service_id"] == "0x" + keccak_id(NAMESPACE, "fx_rates").hex()
+    assert listed["tx"].startswith("0x")
+    assert listed["namespace"] == "0x" + NAMESPACE.hex()
+    # First listing in the server claims the namespace and pins the price ceiling.
+    assert publisher.claimed == [NAMESPACE]
+    assert publisher.registry.ceilings[NAMESPACE] == appmod.MARKET_MAX_PRICE_ATOMIC
+    # The store keeps the mirror, since the chain has no idea who u1 is.
+    assert listed["store_id"]
 
-    # invisible to the agent until verified
+    # invisible to the agent until an admin verifies it on-chain
     assert client.get("/market/services/g1").json()["count"] == 0
-    assert client.get("/market/services/g1?all=true").json()["count"] == 1
+    pending = client.get("/market/services/g1?all=true").json()
+    assert pending["source"] == "chain"
+    assert pending["count"] == 1
+    assert pending["services"][0]["lister_id"] == "u1"
 
     r = client.post("/market/verify", json={"guild_id": "g1", "name": "fx_rates", "admin_id": "a1"})
     assert r.status_code == 200
-    assert r.json()["verified"] is True
+    approved = r.json()
+    assert approved["verified"] is True
+    assert approved["tx"].startswith("0x")
 
     body = client.get("/market/services/g1").json()
     assert body["count"] == 1
     svc = body["services"][0]
     assert svc["name"] == "fx_rates"
     assert svc["price_usdc"] == "$0.0020"
-    assert svc["wallet"] == _LIST_BODY["wallet"]
+    assert svc["wallet"] == _LIST_BODY["wallet"]  # payTo is the member's own wallet
+    assert svc["lister"] == OPERATOR  # the operator submitted it
+    assert svc["buyable"] is True
+
+    # verifying twice is not a second transaction
+    again = client.post(
+        "/market/verify", json={"guild_id": "g1", "name": "fx_rates", "admin_id": "a1"}
+    )
+    assert again.status_code == 200
+    assert again.json()["tx"] is None
 
 
-def test_market_list_rejects_bad_input(client: TestClient) -> None:
+def test_market_list_without_a_signer_is_refused(client: TestClient) -> None:
+    # No registry signer means no way to make the listing public, so the endpoint
+    # refuses instead of writing a private row and calling it listed.
+    r = client.post("/market/list", json=_LIST_BODY)
+    assert r.status_code == 503
+    assert client.get("/market/services/g1?all=true").json() == {
+        "source": "store",
+        "count": 0,
+        "services": [],
+    }
+
+
+def test_market_list_rejects_bad_input(market_client: tuple[TestClient, _FakePublisher]) -> None:
+    client, _ = market_client
     for patch, expect in [
         ({"name": "Bad Name!"}, 400),  # invalid chars
         ({"wallet": "not-an-address"}, 400),
         ({"price_atomic": 0}, 400),
         ({"price_atomic": appmod.MARKET_MAX_PRICE_ATOMIC + 1}, 400),  # over cap
         ({"url": "ftp://fx.example.com"}, 400),
+        ({"url": "http://fx.example.com/quote"}, 400),  # the registry only takes https
     ]:
         r = client.post("/market/list", json={**_LIST_BODY, **patch})
         assert r.status_code == expect, patch
 
 
-def test_market_list_rejects_duplicate_name(client: TestClient) -> None:
+def test_market_list_rejects_duplicate_name(
+    market_client: tuple[TestClient, _FakePublisher],
+) -> None:
+    client, _ = market_client
     assert client.post("/market/list", json=_LIST_BODY).status_code == 200
     assert client.post("/market/list", json=_LIST_BODY).status_code == 409
 
 
-def test_market_verify_unknown_service_404(client: TestClient) -> None:
+def test_market_list_reports_the_contracts_own_refusal(
+    market_client: tuple[TestClient, _FakePublisher],
+) -> None:
+    # The chain already holds the name but this service's mirror does not, so the
+    # refusal comes back from the contract and is named from the committed ABI.
+    client, publisher = market_client
+    publisher.publish(
+        NAMESPACE, "fx_rates", "Live FX rates", _LIST_BODY["url"], _LIST_BODY["wallet"], 2_000
+    )
+    r = client.post("/market/list", json=_LIST_BODY)
+    assert r.status_code == 502
+    assert "ServiceExists" in r.json()["detail"]
+
+
+def test_market_verify_unknown_service_404(
+    market_client: tuple[TestClient, _FakePublisher],
+) -> None:
+    client, _ = market_client
     r = client.post("/market/verify", json={"guild_id": "g1", "name": "ghost", "admin_id": "a1"})
     assert r.status_code == 404
+
+
+def test_market_catalog_falls_back_to_the_mirror_when_the_chain_is_unreadable(
+    market_client: tuple[TestClient, _FakePublisher],
+) -> None:
+    # Writes fail closed, reads degrade: the agent can only ever spend on what the
+    # contract calls buyable, so a stale read cannot authorise anything.
+    client, publisher = market_client
+    assert client.post("/market/list", json=_LIST_BODY).status_code == 200
+    publisher.registry.reads_fail = True
+    body = client.get("/market/services/g1?all=true").json()
+    assert body["source"] == "store"
+    assert [s["name"] for s in body["services"]] == ["fx_rates"]
 
 
 # --- market executor -------------------------------------------------------

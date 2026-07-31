@@ -11,9 +11,9 @@ Routes:
   GET  /status/{payment_id}   — Payment status (polled by bot)
   GET  /supported             — x402 facilitator supported schemes
   GET  /health                — Health check
-  POST /market/list           — Member lists a priced service (unverified)
-  POST /market/verify         — Admin verifies a listing so the agent can buy it
-  GET  /market/services/{gid} — The per-guild marketplace catalog
+  POST /market/list           — Member lists a priced service on-chain (unverified)
+  POST /market/verify         — Admin verifies the listing on-chain so the agent can buy it
+  GET  /market/services/{gid} — The per-guild catalog, read from the registry
   GET  /channel               — Channel state, per-person meters and settlements
   GET  /channel/quote         — The cumulative a payer should sign next
   POST /channel/settle        — Redeem the accrued vouchers now
@@ -43,6 +43,15 @@ from x402.schemas import PaymentRequired, PaymentRequirements
 
 from ..chain import config as chain_config
 from ..chain.channel import voucher_from_dict
+from ..chain.client import revert_name
+from ..chain.registry import (
+    ZERO_ADDRESS,
+    NamespaceNotOwned,
+    RegistryPublisher,
+    ServiceListing,
+    build_publisher,
+    discord_namespace,
+)
 from ..domain.models import MarketplaceService, PaymentRecord, PaymentStatus
 from ..payments.channel_rail import ChannelRail, build_rail
 from ..payments.config import (
@@ -76,6 +85,9 @@ CHANNEL_VOUCHER_HEADER = "X-CHANNEL-VOUCHER"
 store: PaymentStore
 facilitator_client: EmbeddedFacilitatorClient
 rail: ChannelRail | None = None
+# Publishes marketplace listings on the ServiceRegistry. None means this service
+# cannot make a listing public, and the marketplace endpoints say so.
+market: RegistryPublisher | None = None
 _settle_lock = asyncio.Lock()
 # Background settlement tasks, held so the loop cannot garbage collect them.
 _background: set[asyncio.Task[None]] = set()
@@ -83,7 +95,7 @@ _background: set[asyncio.Task[None]] = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global store, facilitator_client, rail
+    global store, facilitator_client, rail, market
     store = PaymentStore(DB_PATH)
     await store.init()
 
@@ -95,6 +107,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("channel rail ready on %s", rail.channel_id_hex)
     else:
         logger.info("channel rail off, running the per-call x402 rail only")
+
+    market = build_publisher(MARKET_MAX_PRICE_ATOMIC)
+    if market is not None:
+        logger.info(
+            "marketplace publishes to %s as %s",
+            chain_config.SERVICE_REGISTRY_ADDRESS,
+            market.address,
+        )
+    else:
+        logger.info("marketplace publishing off, no service key to submit listings with")
 
     logger.info("MoonWalk API ready on Arc %s", ARC_NETWORK)
     yield
@@ -428,10 +450,47 @@ MARKET_MAX_PRICE_ATOMIC = 10_000  # $0.01
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
+def _registry_refusal(exc: Exception) -> str:
+    """Name the contract's own error, so a refusal reads as `ServiceExists` rather
+    than as `execution reverted`."""
+    data = getattr(exc, "data", None)
+    if not isinstance(data, str) and exc.args:
+        data = exc.args[0] if isinstance(exc.args[0], str) else None
+    named = revert_name(data if isinstance(data, str) else None, "ServiceRegistry")
+    return named if named != "unknown" else str(exc)[:200]
+
+
+def _listing_payload(listing: ServiceListing, lister_id: str) -> dict[str, Any]:
+    """One on-chain listing in the shape the bot and the agent already read."""
+    return {
+        "service_id": "0x" + listing.service_id.hex(),
+        "name": listing.name,
+        "description": listing.description,
+        "url": listing.endpoint,
+        "price_atomic": listing.price_atomic,
+        "price_usdc": listing.price_display,
+        "wallet": listing.pay_to,
+        "verified": listing.verified,
+        "enabled": listing.enabled,
+        "buyable": listing.buyable,
+        "lister": listing.lister,
+        "lister_id": lister_id,
+    }
+
+
 @app.post("/market/list")
 async def market_list(body: dict[str, Any]) -> dict[str, Any]:
-    """A member lists a priced service. It stays invisible to the agent until
-    an admin verifies it."""
+    """A member lists a priced service on-chain. It stays invisible to the agent
+    until an admin verifies it.
+
+    The listing goes on the ServiceRegistry, not only into this app's database. The
+    operator submits it, because a Discord member has no wallet and no gas, and
+    `payTo` is the member's own address, so the price, the endpoint and the wallet
+    that gets paid are public before the agent buys a single call. With no way to
+    publish, the listing is refused: a private row calling itself listed is the
+    thing this replaces. The store keeps the mirror, since the chain has no idea
+    which Discord account is behind an address.
+    """
     name = str(body.get("name", "")).strip()[:40]
     url = str(body.get("url", "")).strip()[:400]
     wallet = str(body.get("wallet", "")).strip()
@@ -447,8 +506,10 @@ async def market_list(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "name, url, guild_id and lister_id are required")
     if not re.fullmatch(r"[a-z0-9_]{3,40}", name):
         raise HTTPException(400, "name must be 3-40 chars of a-z, 0-9 and _")
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(400, "url must be http(s)")
+    # The registry only accepts https, so http is refused here rather than sent to
+    # the chain to be reverted.
+    if not url.startswith("https://"):
+        raise HTTPException(400, "url must be https; the registry rejects anything else")
     if not _ADDRESS_RE.fullmatch(wallet):
         raise HTTPException(400, "wallet must be a 0x address (receives the USDC)")
     if not 0 < price_atomic <= MARKET_MAX_PRICE_ATOMIC:
@@ -456,6 +517,21 @@ async def market_list(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, f"price_atomic must be 1..{MARKET_MAX_PRICE_ATOMIC} (${cap:.2f})")
     if await store.get_service_by_name(guild_id, name) is not None:
         raise HTTPException(409, f"a service named '{name}' already exists in this server")
+
+    publisher = market
+    if publisher is None:
+        raise HTTPException(503, "this service has no registry signer, so it cannot list on-chain")
+    namespace = discord_namespace(guild_id)
+    try:
+        published = await asyncio.to_thread(
+            publisher.publish, namespace, name, description, url, wallet, price_atomic
+        )
+    except NamespaceNotOwned as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception as exc:  # noqa: BLE001 - the contract's own refusal is the answer
+        refusal = _registry_refusal(exc)
+        logger.warning("registry refused %s in guild %s: %s", name, guild_id, refusal)
+        raise HTTPException(502, f"the registry refused this listing: {refusal}") from None
 
     service = MarketplaceService(
         guild_id=guild_id,
@@ -467,35 +543,107 @@ async def market_list(body: dict[str, Any]) -> dict[str, Any]:
         wallet=wallet,
     )
     await store.create_service(service)
-    return {"service_id": service.service_id, "name": service.name, "verified": False}
+    return {
+        "service_id": published.service_id_hex,
+        "store_id": service.service_id,
+        "name": service.name,
+        "verified": False,
+        "namespace": "0x" + namespace.hex(),
+        "tx": published.listing.tx_hash,
+        "explorer": published.listing.url,
+        "lister": publisher.address,
+    }
 
 
 @app.post("/market/verify")
 async def market_verify(body: dict[str, Any]) -> dict[str, Any]:
-    """An admin approves a listing; only then can the agent discover and pay it.
+    """An admin approves a listing on-chain; only then can the agent discover and
+    pay it.
 
-    The Discord bot checks the caller's admin permission before calling this.
+    Two checks, in two places, on purpose. The Discord bot checks that the caller
+    administers the server before calling this, and the contract checks that the
+    namespace belongs to this operator before it flips the flag. The approval is
+    then a public act with a transaction behind it, and a price change drops it, so
+    what an admin approved is what stays buyable.
     """
     guild_id = str(body.get("guild_id", "")).strip()
     name = str(body.get("name", "")).strip()
     admin_id = str(body.get("admin_id", "")).strip()
     if not (guild_id and name and admin_id):
         raise HTTPException(400, "guild_id, name and admin_id are required")
-    service = await store.get_service_by_name(guild_id, name)
-    if service is None:
-        raise HTTPException(404, f"no service named '{name}' in this server")
-    if service.verified:
-        return {"service_id": service.service_id, "name": service.name, "verified": True}
-    await store.verify_service(service.service_id, admin_id)
-    return {"service_id": service.service_id, "name": service.name, "verified": True}
+
+    publisher = market
+    if publisher is None:
+        raise HTTPException(
+            503, "this service has no registry signer, so it cannot verify a listing"
+        )
+    namespace = discord_namespace(guild_id)
+    try:
+        service_id = await asyncio.to_thread(publisher.registry.service_id, namespace, name)
+        listing = await asyncio.to_thread(publisher.registry.get, service_id)
+    except Exception as exc:  # noqa: BLE001 - an unreadable registry is not an approval
+        raise HTTPException(502, f"could not read the registry: {_registry_refusal(exc)}") from None
+    if listing.lister == ZERO_ADDRESS:
+        raise HTTPException(404, f"no service named '{name}' is listed for this server")
+
+    row = await store.get_service_by_name(guild_id, name)
+    if listing.verified:
+        if row is not None and not row.verified:
+            await store.verify_service(row.service_id, admin_id)
+        return {
+            "service_id": "0x" + service_id.hex(),
+            "name": name,
+            "verified": True,
+            "tx": None,
+        }
+    try:
+        sent = await asyncio.to_thread(publisher.verify, service_id, True)
+    except Exception as exc:  # noqa: BLE001
+        refusal = _registry_refusal(exc)
+        logger.warning("registry refused verify for %s in %s: %s", name, guild_id, refusal)
+        raise HTTPException(502, f"the registry refused this approval: {refusal}") from None
+    if row is not None:
+        await store.verify_service(row.service_id, admin_id)
+    return {
+        "service_id": "0x" + service_id.hex(),
+        "name": name,
+        "verified": True,
+        "tx": sent.tx_hash,
+        "explorer": sent.url,
+        "admin": publisher.address,
+    }
 
 
 @app.get("/market/services/{guild_id}")
 async def market_services(guild_id: str, all: bool = False) -> dict[str, Any]:
-    """The per-guild catalog. Default shows what the agent can buy (verified);
-    ?all=true includes pending listings so admins can see what needs review."""
+    """The per-guild catalog, read from the registry. Default shows what the agent
+    can buy; `?all=true` includes listings still waiting on an admin.
+
+    Reads degrade where writes fail closed. If the chain cannot be read the store's
+    mirror answers and `source` says so, because the agent can only ever spend on
+    what the contract itself calls buyable, so a stale read cannot authorise a
+    payment that the chain would refuse.
+    """
+    publisher = market
+    if publisher is not None:
+        namespace = discord_namespace(guild_id)
+        try:
+            listings = await asyncio.to_thread(publisher.catalog, namespace, not all)
+        except Exception as exc:  # noqa: BLE001 - fall back to the mirror
+            logger.warning("registry catalog read failed for guild %s: %s", guild_id, exc)
+        else:
+            rows = await store.list_services(guild_id, verified_only=False)
+            listers = {row.name: row.lister_id for row in rows}
+            return {
+                "source": "chain",
+                "namespace": "0x" + namespace.hex(),
+                "count": len(listings),
+                "services": [_listing_payload(s, listers.get(s.name, "")) for s in listings],
+            }
+
     services = await store.list_services(guild_id, verified_only=not all)
     return {
+        "source": "store",
         "count": len(services),
         "services": [
             {

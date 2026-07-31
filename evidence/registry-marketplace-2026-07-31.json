@@ -1,0 +1,30 @@
+{
+  "what": "The Discord marketplace writes to the ServiceRegistry: /market/list published this listing and /market/verify approved it, both submitted by the operator on Arc testnet.",
+  "captured_at": "2026-07-31",
+  "chain_id": 5042002,
+  "registry": "0x774E5F27b572450F5D21FE3929B45557F3468F9b",
+  "namespace": "0xf11f0620475bb20921259793fe21ef4365c8367aa1191678a488e5c0e1343455",
+  "namespace_admin": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+  "namespace_max_price_atomic": 10000,
+  "service_id": "0xeac3320e396fdac77cf757fc1e1a2d26e29a0d1a8213e802bb9c1ba977cd6451",
+  "list_tx": "0x51f129449bc8bd8c28a51984a1f2185a5cec8517c63b12bd67e19830e4c41770",
+  "verify_tx": "0xf07f9c2ae748a051801168b181f3d960ab4245d0db2a284691a7cb676d1230c7",
+  "read_back_from_chain": {
+    "name": "e2e_ask",
+    "description": "Ask the MoonWalk agent, proof run for the on-chain marketplace",
+    "endpoint": "https://nanopay-api.loadline.xyz/demo/ask",
+    "price_atomic": 1000,
+    "price_display": "$0.0010",
+    "pay_to": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "lister": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "asset": "0x3600000000000000000000000000000000000000",
+    "verified": true,
+    "enabled": true,
+    "buyable": true
+  },
+  "explorer": {
+    "list": "https://testnet.arcscan.app/tx/0x51f129449bc8bd8c28a51984a1f2185a5cec8517c63b12bd67e19830e4c41770",
+    "verify": "https://testnet.arcscan.app/tx/0xf07f9c2ae748a051801168b181f3d960ab4245d0db2a284691a7cb676d1230c7",
+    "registry": "https://testnet.arcscan.app/address/0x774E5F27b572450F5D21FE3929B45557F3468F9b"
+  }
+}
