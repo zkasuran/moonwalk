@@ -49,7 +49,7 @@ from src.chain import ArcClient, ChannelClient, Voucher, discord_subject  # noqa
 from src.chain import config as chain_config  # noqa: E402
 from src.circle import cctp, wallets  # noqa: E402
 
-load_dotenv()
+load_dotenv(override=True)  # this lane's .env wins over ambient exports
 
 TRANSFER_WITH_AUTHORIZATION = (
     "transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,bytes)"
