@@ -1,0 +1,71 @@
+{
+  "mode": "dry-run",
+  "timestamp": "20260731T125026Z",
+  "iris": "https://iris-api-sandbox.circle.com",
+  "route": {
+    "sourceDomain": {
+      "expected": 0,
+      "onchain": 0
+    },
+    "destinationDomain": {
+      "expected": 26,
+      "onchain": 26
+    },
+    "destinationLocalToken": "0x3600000000000000000000000000000000000000",
+    "ok": true
+  },
+  "plan": {
+    "source": "eth-sepolia",
+    "sourceDomain": 0,
+    "destination": "arc-testnet",
+    "destinationDomain": 26,
+    "sender": "0xDB6c6340342e71A63cD11Ebac2185204b7777777",
+    "recipient": "0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4",
+    "thresholdAtomic": 10000000,
+    "destinationBalanceAtomic": 10800060,
+    "sourceBalanceAtomic": 500000,
+    "deficitAtomic": 0,
+    "amountAtomic": 500000,
+    "maxFeeAtomic": 63,
+    "feeBps": 1.0,
+    "finalityThreshold": 1000,
+    "allowanceAtomic": 0,
+    "needed": false,
+    "funded": true,
+    "needsApproval": true,
+    "minimumReceivedAtomic": 499937,
+    "calls": [
+      {
+        "label": "approve",
+        "chain": "eth-sepolia",
+        "to": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        "function": "approve(address,uint256)",
+        "selector": "0x095ea7b3",
+        "args": {
+          "spender": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+          "amount": "500000"
+        },
+        "calldata": "0x095ea7b30000000000000000000000008fe6b999dc680ccfdd5bf7eb0974218be2542daa000000000000000000000000000000000000000000000000000000000007a120"
+      },
+      {
+        "label": "depositForBurn",
+        "chain": "eth-sepolia",
+        "to": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "function": "depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)",
+        "selector": "0x8e0250ee",
+        "args": {
+          "amount": "500000",
+          "destinationDomain": "26",
+          "mintRecipient": "0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4",
+          "burnToken": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+          "destinationCaller": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "maxFee": "63",
+          "minFinalityThreshold": "1000"
+        },
+        "calldata": "0x8e0250ee000000000000000000000000000000000000000000000000000000000007a120000000000000000000000000000000000000000000000000000000000000001a0000000000000000000000006a1b4267921f41f9d5d1facf998da9bb930701c40000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c72380000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003f00000000000000000000000000000000000000000000000000000000000003e8"
+      }
+    ]
+  },
+  "sourceGasWei": 211393903480055574,
+  "blockers": []
+}

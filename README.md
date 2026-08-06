@@ -131,9 +131,15 @@ Open right now, read with `scripts/open_channel.py`:
 | channel id | `0xacdc1ad0ca59aa9ff87ca0838e47ce5efd380ae0afd43ad8f6ad8eeb46c7cbdd` |
 | payer | `0x6a1b4267921f41f9D5D1FACF998Da9BB930701c4` |
 | service | `0xDB6c6340342e71A63cD11Ebac2185204b7777777` |
-| deposit / redeemed / outstanding | 0.500000 / 0.000000 / 0.500000 USDC |
+| deposit / redeemed / outstanding | 0.500000 / 0.012000 / 0.488000 USDC, read 2026-08-02 |
 | guarded | yes, default cap $0.05 per person per 86,400s |
 | cap owner | the service, so the payer never needs to send a transaction |
+
+Those three amounts move every time the service settles a batch, so treat the row as
+a dated snapshot and read the live pair instead of quoting it:
+[`https://nanopay-api.loadline.xyz/channel`](https://nanopay-api.loadline.xyz/channel)
+returns the same state as JSON from the running service, and `scripts/open_channel.py`
+reads it straight from the contract with no service in the middle.
 
 ### The marketplace, on-chain
 
