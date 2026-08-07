@@ -101,6 +101,11 @@
   .d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.16s; } .d3 { animation-delay: 0.28s; }
   .d4 { animation-delay: 0.4s; } .d5 { animation-delay: 0.52s; }
 
+  /* progressive reveal for the demo video kit; window.setReveal drives it. Every
+     [data-step] is fully shown on a normal page load, so the live page is unchanged. */
+  [data-step] { transition: opacity 0.4s ease; }
+  [data-step].dim { opacity: 0.08; }
+
   /* ---- receipt / chat card ---- */
   .card-console {
     margin-top: 50px; border: 1px solid var(--line); border-radius: 16px;
@@ -296,19 +301,19 @@
     <h2>Three contracts, live on Arc.</h2>
     <p class="sub">Deployed 2026-07-29 to Arc testnet from <span class="mono" style="color:var(--muted)">contracts/script/Deploy.s.sol</span>. Click an address to read it on Arcscan.</p>
     <div class="cgrid">
-      <div class="cbox">
+      <div class="cbox" data-step>
         <h3>NanoChannel</h3>
         <p>The unidirectional USDC channel. Funded by a signed EIP-3009 authorization, metered by cumulative vouchers, settled in batches, closed by either side.</p>
         <a class="addr" href="https://testnet.arcscan.app/address/0x3e2dE84eD534E39241682957d617ed761892D568" target="_blank" rel="noopener">0x3e2dE84eD534E39241682957d617ed761892D568 ↗</a>
         <div class="meta">deploy <a href="https://testnet.arcscan.app/tx/0x5a96809fbd4cd2ab32eaff36d24234916ad2ad643832517e2ac633f8a9ac1833" target="_blank" rel="noopener">5a96809f ↗</a> · 30 forge tests</div>
       </div>
-      <div class="cbox">
+      <div class="cbox" data-step>
         <h3>SpendGuard</h3>
         <p>Per-person spend caps, lifetime or windowed, with a scope default and per-subject overrides. Unconfigured means zero, so it fails closed.</p>
         <a class="addr" href="https://testnet.arcscan.app/address/0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b" target="_blank" rel="noopener">0xfbB8e1E61e8FbB09e5d5be308ac4F54D2865B67b ↗</a>
         <div class="meta">deploy <a href="https://testnet.arcscan.app/tx/0xda0a5e42fabc28725fc374cf02825a1eac7e54a77dee2e854fcb73c59010f1b0" target="_blank" rel="noopener">da0a5e42 ↗</a> · 10 forge tests</div>
       </div>
-      <div class="cbox">
+      <div class="cbox" data-step>
         <h3>ServiceRegistry</h3>
         <p>A namespaced priced catalog of machine-callable services. Anyone lists. A namespace admin verifies. Any price change drops the verification.</p>
         <a class="addr" href="https://testnet.arcscan.app/address/0x774E5F27b572450F5D21FE3929B45557F3468F9b" target="_blank" rel="noopener">0x774E5F27b572450F5D21FE3929B45557F3468F9b ↗</a>
@@ -318,7 +323,7 @@
     <div class="compiler">
       solc 0.8.24 · evm_version paris · optimizer on, 200 runs · chain 5042002<br />
       USDC <a href="https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000" target="_blank" rel="noopener" style="color:var(--muted)">0x3600…0000</a>, 6 decimals, EIP-712 domain name "USDC" version "2"<br />
-      51 forge tests pass, 126 pytest tests pass, mypy and ruff clean
+      51 forge tests pass, 199 pytest tests pass, mypy and ruff clean
     </div>
   </div>
 </section>
@@ -626,15 +631,15 @@
     <div class="eyebrow">Check it yourself</div>
     <h2>Nothing here needs our uptime.</h2>
     <p class="sub">The contracts are on Arc and the repo is public, so every number on this page can be re-derived from a clone. The first command is offline. The second spends real testnet USDC and needs two keys in <span class="mono" style="color:var(--muted)">.env</span>.</p>
-    <div class="card-console" style="margin-top:26px">
+    <div class="card-console" id="verify-run" style="margin-top:26px">
       <div class="cc-bar"><span class="lamp"></span><span class="lamp"></span><span class="lamp g"></span><span class="cc-title">clone → verify</span></div>
       <div class="cc-body">
-        <div class="line"><span class="prompt">$</span> <span class="u">git clone https://github.com/zkasuran/moonwalk &amp;&amp; cd moonwalk</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="u">cd contracts &amp;&amp; forge test</span> <span class="sys">→ 51 passed, 0 failed</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="u">make dev-install &amp;&amp; make lint &amp;&amp; make test</span> <span class="sys">→ ruff and mypy clean over 32 modules, 199 passed</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="u">make channel-demo</span> <span class="sys">→ the whole lifecycle on Arc, writes evidence/channel-&lt;stamp&gt;.json</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="u">.venv/bin/python scripts/open_channel.py</span> <span class="sys">→ reads the production channel straight off the chain</span></div>
-        <div class="line sys">Every claim above traces to a file in <span class="mono">evidence/</span>, written by the run that produced it.</div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">git clone https://github.com/zkasuran/moonwalk &amp;&amp; cd moonwalk</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">cd contracts &amp;&amp; forge test</span> <span class="sys">→ 51 passed, 0 failed</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">make dev-install &amp;&amp; make lint &amp;&amp; make test</span> <span class="sys">→ ruff and mypy clean over 32 modules, 199 passed</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">make channel-demo</span> <span class="sys">→ the whole lifecycle on Arc, writes evidence/channel-&lt;stamp&gt;.json</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">.venv/bin/python scripts/open_channel.py</span> <span class="sys">→ reads the production channel straight off the chain</span></div>
+        <div class="line sys" data-step>Every claim above traces to a file in <span class="mono">evidence/</span>, written by the run that produced it.</div>
       </div>
     </div>
     <div class="judge-try" style="margin-top:22px">
@@ -1136,6 +1141,33 @@
   }
   loadMarket();
   setInterval(loadMarket, 30000);
+</script>
+
+<script>
+/* Reveal contract for the demo video kit. Opacity only, so every [data-step] box is
+   measured once at full reveal and stays put in every state. On a normal page load
+   every step is revealed, so the live page looks and behaves exactly as before. */
+(function(){
+  var steps = [].slice.call(document.querySelectorAll('[data-step]'));
+  function dimTo(list, k){ for (var i = 0; i < list.length; i++){ list[i].classList.toggle('dim', i >= k); } }
+  function stepsIn(el){ return [].slice.call(el.querySelectorAll('[data-step]')); }
+  window.setReveal = function(k, scope){
+    if (typeof k === 'string'){ var swap = k; k = scope; scope = swap; }
+    var list = steps;
+    if (scope){
+      var el = (typeof scope === 'string')
+        ? document.getElementById(String(scope).replace(/^#/, ''))
+        : scope;
+      if (el && el.querySelectorAll){ dimTo(steps, steps.length); list = stepsIn(el); }
+    }
+    var n = Number(k);
+    if (!isFinite(n)) { n = list.length; }
+    n = Math.max(0, Math.min(list.length, Math.floor(n)));
+    dimTo(list, n);
+    return n;
+  };
+  window.setReveal(steps.length);
+})();
 </script>
 </body>
 </html>
