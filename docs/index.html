@@ -352,7 +352,7 @@
         </form>
         <div class="chips">
           <button class="chip" data-q="what's BTC doing right now, one line?">what's BTC doing right now?</button>
-          <button class="chip" data-q="latest world cup news, one line">latest world cup news?</button>
+          <button class="chip" data-q="top news headlines right now, one line">top news right now?</button>
           <button class="chip" data-q="weather in Tokyo?">weather in Tokyo?</button>
           <button class="chip" data-q="explain the TCP handshake in one sentence">explain TCP handshakes (free)</button>
         </div>
@@ -857,6 +857,7 @@
     const crypto = /eth|ethereum/i.test(q);
     const weather = /weather|tokyo|london|rain|forecast/i.test(q);
     const priceish = /btc|bitcoin|eth|price|market|trading/i.test(q);
+    const news = /news|headline|breaking|happening|who won|current events/i.test(q);
     if (weather) {
       push("sys", "agent · decides weather is worth $0.0010, within budget");
       push("amber", "pays · EIP-3009 signed, settled on Arc");
@@ -869,6 +870,11 @@
       push("amber", "pays · EIP-3009 signed, settled on Arc");
       push("ok", "gets · " + sym + " " + price + " from CoinGecko");
       receipt('<div class="kv"><span>answer</span><span class="u">' + sym + ' is trading at ' + price + ' right now.</span></div><div class="kv"><span>paid</span><span class="amber">$0.0010 USDC</span></div><div class="kv"><span>receipt</span><a class="tx" href="' + ARC + '0x70ca2d2aa7e6ff894484d0f6a4f910c4f1e89a3685bb5da30374e42bf75edd2f" target="_blank" rel="noopener">70ca2d2a ↗</a></div>');
+    } else if (news) {
+      push("sys", "agent · decides news needs a live source, worth $0.0010");
+      push("amber", "pays · EIP-3009 signed, settled on Arc");
+      push("ok", "gets · today's headlines from Google News");
+      receipt('<div class="kv"><span>answer</span><span class="u">Pulled today\'s top headlines live and answered from them.</span></div><div class="kv"><span>paid</span><span class="amber">$0.0010 USDC</span></div><div class="kv"><span>receipt</span><a class="tx" href="' + ARC + '0x7947c3d0db11151d68003f433471aafe71c5da0884ca6432423cd2f8ff4ad057" target="_blank" rel="noopener">7947c3d0 ↗</a></div>');
     } else {
       push("sys", "agent · answers from its own knowledge, no tool needed");
       push("ok", "free · $0.0000 spent");

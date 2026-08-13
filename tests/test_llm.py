@@ -6,11 +6,23 @@ offline and deterministically.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.agent import llm
 from src.agent.tools import TOOL_CATALOG
 from src.payments import config
+
+
+def _sse(*chunks: dict) -> bytes:
+    """Render chat-completion chunks as an SSE body, terminated with [DONE].
+
+    The gateway only serves streaming responses, so the mocked endpoint returns the
+    same `data: {...}` line format the real one does and llm._openai_post reassembles.
+    """
+    body = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks)
+    return (body + "data: [DONE]\n\n").encode()
 
 
 @pytest.fixture
@@ -75,7 +87,14 @@ async def test_openai_chat_returns_trimmed_content(
     openai_env: None,
     httpx_mock,  # type: ignore[no-untyped-def]
 ) -> None:
-    httpx_mock.add_response(json={"choices": [{"message": {"content": "  hello world  "}}]})
+    httpx_mock.add_response(
+        content=_sse(
+            {"choices": [{"delta": {"role": "assistant"}}]},
+            {"choices": [{"delta": {"content": "  hello"}}]},
+            {"choices": [{"delta": {"content": " world  "}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        )
+    )
     out = await llm.chat("hi", max_tokens=10)
     assert out == "hello world"
 
@@ -85,25 +104,37 @@ async def test_openai_plan_picks_a_tool(
     httpx_mock,  # type: ignore[no-untyped-def]
 ) -> None:
     httpx_mock.add_response(
-        json={
-            "choices": [
-                {
-                    "message": {
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {
-                                    "name": "crypto_price",
-                                    "arguments": '{"symbol": "BTC"}',
-                                },
-                            }
-                        ],
+        content=_sse(
+            {"choices": [{"delta": {"role": "assistant"}}]},
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "crypto_price", "arguments": ""},
+                                }
+                            ]
+                        }
                     }
-                }
-            ]
-        }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {"index": 0, "function": {"arguments": '{"symbol": "BTC"}'}}
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        )
     )
     res = await llm.plan_tools("sys", "price of btc?", TOOL_CATALOG, "respond_directly")
     assert res["name"] == "crypto_price"
@@ -114,7 +145,9 @@ async def test_openai_plan_no_tool_call_is_free_answer(
     openai_env: None,
     httpx_mock,  # type: ignore[no-untyped-def]
 ) -> None:
-    httpx_mock.add_response(json={"choices": [{"message": {"content": "Here is the answer."}}]})
+    httpx_mock.add_response(
+        content=_sse({"choices": [{"delta": {"content": "Here is the answer."}}]})
+    )
     res = await llm.plan_tools("sys", "hello", TOOL_CATALOG, "respond_directly")
     assert res["name"] == ""
     assert "answer" in res["text"].lower()
@@ -125,17 +158,22 @@ async def test_openai_plan_bad_arguments_json_degrades(
     httpx_mock,  # type: ignore[no-untyped-def]
 ) -> None:
     httpx_mock.add_response(
-        json={
-            "choices": [
-                {
-                    "message": {
-                        "tool_calls": [
-                            {"function": {"name": "crypto_price", "arguments": "NOT JSON"}}
-                        ]
+        content=_sse(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"name": "crypto_price", "arguments": "NOT JSON"},
+                                }
+                            ]
+                        }
                     }
-                }
-            ]
-        }
+                ]
+            },
+        )
     )
     res = await llm.plan_tools("sys", "x", TOOL_CATALOG, "respond_directly")
     assert res["name"] == "crypto_price"

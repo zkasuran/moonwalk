@@ -24,7 +24,7 @@ import httpx
 from ..payments import config
 from .tools import ToolSpec
 
-_HTTP_TIMEOUT = 30.0
+_HTTP_TIMEOUT = 60.0  # a streaming reasoning model can pause before its first token
 
 
 def provider() -> str:
@@ -81,16 +81,76 @@ async def plan_tools(
 
 
 async def _openai_post(body: dict[str, Any]) -> dict[str, Any]:
+    """POST to /chat/completions and return one non-streaming-shaped response.
+
+    The gateway rejects non-streaming requests, so this always sends stream=true and
+    reassembles the SSE deltas back into the ``{"choices": [{"message": ...}]}`` shape
+    the parsers below expect. Callers stay unaware that the wire format is a stream.
+    """
     url = config.OPENAI_BASE_URL.rstrip("/") + "/chat/completions"
+    payload = {**body, "stream": True}
+    content_parts: list[str] = []
+    tool_calls: dict[int, dict[str, Any]] = {}  # keyed by the streamed call index
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        resp = await client.post(
+        async with client.stream(
+            "POST",
             url,
             headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}"},
-            json=body,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    return cast("dict[str, Any]", data)
+            json=payload,
+        ) as resp:
+            if resp.status_code >= 400:
+                await resp.aread()  # load the body so raise_for_status can report it
+                resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                data = _sse_payload(line)
+                if data is None:
+                    continue
+                if data == "[DONE]":
+                    break
+                try:
+                    choices = json.loads(data).get("choices") or []
+                except ValueError:
+                    continue
+                if not choices:
+                    continue  # e.g. the trailing usage-only chunk
+                delta = choices[0].get("delta") or {}
+                piece = delta.get("content")
+                if piece:
+                    content_parts.append(piece)
+                for frag in delta.get("tool_calls") or []:
+                    _merge_tool_call(tool_calls, frag)
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+    if tool_calls:
+        message["tool_calls"] = [tool_calls[i] for i in sorted(tool_calls)]
+    return {"choices": [{"message": message}]}
+
+
+def _sse_payload(line: str) -> str | None:
+    """Return the payload of an SSE ``data:`` line, or None for anything else."""
+    if not line.startswith("data:"):
+        return None
+    return line[len("data:") :].strip()
+
+
+def _merge_tool_call(acc: dict[int, dict[str, Any]], frag: dict[str, Any]) -> None:
+    """Fold one streamed tool_call fragment into the accumulator keyed by call index.
+
+    The name and id arrive whole in the opening fragment; the JSON arguments stream in
+    pieces across later fragments. Concatenation is safe for all of them.
+    """
+    idx = int(frag.get("index") or 0)
+    call = acc.setdefault(
+        idx, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+    )
+    if frag.get("id"):
+        call["id"] = frag["id"]
+    if frag.get("type"):
+        call["type"] = frag["type"]
+    fn = frag.get("function") or {}
+    if fn.get("name"):
+        call["function"]["name"] += fn["name"]
+    if fn.get("arguments"):
+        call["function"]["arguments"] += fn["arguments"]
 
 
 def _first_message(data: dict[str, Any]) -> dict[str, Any]:
