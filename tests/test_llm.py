@@ -178,3 +178,64 @@ async def test_openai_plan_bad_arguments_json_degrades(
     res = await llm.plan_tools("sys", "x", TOOL_CATALOG, "respond_directly")
     assert res["name"] == "crypto_price"
     assert res["args"] == {}
+
+
+# ---- reasoning models -------------------------------------------------------
+# A model with no separate reasoning field streams its chain of thought inline as
+# a <think> block. Leaking that into an answer would put the model's private
+# deliberation in front of a Discord user, so it is stripped in one place.
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("<think>2+2 is 4</think>\n\nFour", "Four"),
+        # Multi-line and punctuation-heavy thinking, which a lazy regex would eat.
+        ("<think>line one\nline two\n</think>Paris.", "Paris."),
+        # No block at all: a non-reasoning model must pass through untouched.
+        ("plain answer", "plain answer"),
+        # Answer inside the block. Returning "" here would read as a failed call,
+        # so the block's own text is handed back instead.
+        ("<think>reasoning then Four</think>\n\n", "reasoning then Four"),
+        # Cut short by max_tokens, so the block never closes.
+        ("<think>still thinking about it", "still thinking about it"),
+    ],
+)
+def test_visible_text_drops_the_reasoning_block(content: str, expected: str) -> None:
+    assert llm._visible_text(content) == expected
+
+
+def test_visible_text_keeps_a_think_block_that_is_only_mentioned() -> None:
+    # A bare mention is not a block, so nothing should be removed.
+    assert llm._visible_text("use </think> carefully") == "use </think> carefully"
+
+
+async def test_openai_chat_strips_streamed_reasoning(
+    openai_env: None,
+    httpx_mock,  # type: ignore[no-untyped-def]
+) -> None:
+    # The tags arrive split across deltas, so stripping has to happen after the
+    # stream is reassembled rather than per chunk.
+    httpx_mock.add_response(
+        content=_sse(
+            {"choices": [{"delta": {"content": "<thi"}}]},
+            {"choices": [{"delta": {"content": "nk>weighing it up</thi"}}]},
+            {"choices": [{"delta": {"content": "nk>\n\nBuy BTC."}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        )
+    )
+    assert await llm.chat("hi", max_tokens=10) == "Buy BTC."
+
+
+async def test_openai_plan_free_answer_has_no_reasoning_in_it(
+    openai_env: None,
+    httpx_mock,  # type: ignore[no-untyped-def]
+) -> None:
+    httpx_mock.add_response(
+        content=_sse(
+            {"choices": [{"delta": {"content": "<think>no tool needed</think>Hello to you too."}}]}
+        )
+    )
+    res = await llm.plan_tools("sys", "hello", TOOL_CATALOG, "respond_directly")
+    assert res["name"] == ""
+    assert res["text"] == "Hello to you too."

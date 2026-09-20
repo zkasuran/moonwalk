@@ -60,7 +60,10 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
 # OpenAI-compatible provider (a gateway or self-hosted endpoint that speaks the
 # OpenAI chat-completions protocol). When configured, the agent's reasoning runs
 # here instead of Anthropic. OPENAI_BASE_URL should include the /v1 suffix.
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# MINIMAX_API_KEY is accepted as an alias so an operator whose key already lives
+# in a MiniMax env file can point this at api.minimax.io without copying the
+# secret into a second place.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "") or os.getenv("MINIMAX_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 

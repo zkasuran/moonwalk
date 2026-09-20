@@ -17,6 +17,7 @@ the respond-directly sentinel stay handled in one place (the planner).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, cast
 
 import httpx
@@ -25,6 +26,10 @@ from ..payments import config
 from .tools import ToolSpec
 
 _HTTP_TIMEOUT = 60.0  # a streaming reasoning model can pause before its first token
+
+# A reasoning model that has no separate field for its chain of thought wraps it
+# in <think>...</think> inside the ordinary content stream. MiniMax M3 does this.
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def provider() -> str:
@@ -83,9 +88,11 @@ async def plan_tools(
 async def _openai_post(body: dict[str, Any]) -> dict[str, Any]:
     """POST to /chat/completions and return one non-streaming-shaped response.
 
-    The gateway rejects non-streaming requests, so this always sends stream=true and
-    reassembles the SSE deltas back into the ``{"choices": [{"message": ...}]}`` shape
-    the parsers below expect. Callers stay unaware that the wire format is a stream.
+    This always sends stream=true and reassembles the SSE deltas back into the
+    ``{"choices": [{"message": ...}]}`` shape the parsers below expect, so callers
+    stay unaware that the wire format is a stream. Streaming is what a reasoning
+    model wants anyway, since it can think for seconds before its first token, and
+    some gateways serve nothing else.
     """
     url = config.OPENAI_BASE_URL.rstrip("/") + "/chat/completions"
     payload = {**body, "stream": True}
@@ -119,10 +126,34 @@ async def _openai_post(body: dict[str, Any]) -> dict[str, Any]:
                     content_parts.append(piece)
                 for frag in delta.get("tool_calls") or []:
                     _merge_tool_call(tool_calls, frag)
-    message: dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": _visible_text("".join(content_parts)),
+    }
     if tool_calls:
         message["tool_calls"] = [tool_calls[i] for i in sorted(tool_calls)]
     return {"choices": [{"message": message}]}
+
+
+def _visible_text(content: str) -> str:
+    """Return what the model meant to say, without its chain of thought.
+
+    A reasoning model with no separate reasoning field streams its thinking inline
+    as ``<think>...</think>`` and the answer sits after it, so the block is dropped.
+    Two degraded shapes are handled rather than returned as an empty answer, which
+    would read to a caller as a failed call:
+
+    * a response cut short by ``max_tokens`` can leave the block unterminated;
+    * the model sometimes closes the block after the answer rather than before it,
+      leaving nothing outside. Then its own text is the best answer available.
+    """
+    visible = _THINK_BLOCK.sub("", content)
+    head, unterminated, _ = visible.partition("<think>")
+    visible = (head if unterminated else visible).strip()
+    if visible:
+        return visible
+    inner = content.replace("<think>", " ").replace("</think>", " ").strip()
+    return inner or content.strip()
 
 
 def _sse_payload(line: str) -> str | None:
