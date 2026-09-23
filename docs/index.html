@@ -1,171 +1,774 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MoonWalk: USDC nanopayment channel, live on Arc mainnet</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MoonWalk: nanopayment rails for agent commerce on Arc</title>
+<meta name="description" content="MoonWalk is a USDC payment channel plus per-person spend caps enforced on-chain, live on Arc mainnet. A batch of metered calls settles in one transaction and the payer never sends one." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
-  :root { --bg:#0b0e14; --panel:#141922; --line:#232a36; --ink:#e6edf3; --dim:#8b98a9; --acc:#2775CA; --ok:#3fb950; --warn:#e3b341; --bad:#f85149; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  main { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
-  h1 { font-size:26px; margin:0 0 4px; }
-  h2 { font-size:17px; margin:34px 0 10px; color:var(--ink); }
-  .sub { color:var(--dim); margin:0 0 20px; }
-  a { color:var(--acc); text-decoration:none; }
-  a:hover { text-decoration:underline; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:12px 0; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  .kv { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); }
-  .kv:last-child { border-bottom:0; }
-  .kv .k { color:var(--dim); }
-  .kv .v { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; text-align:right; }
-  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
-  .addr { color:var(--dim); word-break:break-all; }
-  .pill { display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
-  .live { color:var(--ok); border-color:var(--ok); }
-  .bar { height:8px; border-radius:6px; background:var(--line); overflow:hidden; }
-  .bar > span { display:block; height:100%; background:var(--acc); }
-  .bar.over > span { background:var(--bad); }
-  .muted { color:var(--dim); font-size:13px; }
-  button.copy { background:none; border:1px solid var(--line); color:var(--dim); border-radius:6px; font-size:11px; padding:2px 7px; cursor:pointer; }
-  .status { font-size:13px; color:var(--dim); }
-  .refuse { border-left:3px solid var(--bad); padding-left:12px; }
+  :root {
+    --bg: #fbfaf6;
+    --bg-tint: #f3f5ef;
+    --card: #ffffff;
+    --line: #ebe9df;
+    --line2: #ddd9cb;
+    --ink: #1a1c18;
+    --muted: #676d63;
+    --faint: #979c8f;
+    --green: #0f8a56;
+    --green-bright: #15a869;
+    --green-soft: #e7f4ec;
+    --green-line: #bfe3ca;
+    --amber: #b4740f;
+    --amber-soft: #fbf0da;
+    --shadow: 0 12px 32px -14px rgba(30, 42, 28, 0.16);
+    --shadow-lg: 0 30px 60px -24px rgba(30, 42, 28, 0.22);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Figtree", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* soft atmosphere, kept gentle */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(100% 60% at 50% -10%, rgba(21, 168, 105, 0.08), transparent 60%);
+  }
+
+  .wrap { position: relative; z-index: 2; max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  .mono { font-family: "IBM Plex Mono", monospace; }
+  .serif { font-family: "Fraunces", Georgia, serif; }
+
+  /* ---- nav ---- */
+  nav {
+    position: sticky; top: 0; z-index: 40;
+    backdrop-filter: blur(10px);
+    background: rgba(251, 250, 246, 0.8);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .row { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: "Fraunces", serif; font-weight: 700; letter-spacing: -0.01em; font-size: 21px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green-bright); box-shadow: 0 0 0 4px var(--green-soft); animation: pulse 2.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .nav-links { display: flex; align-items: center; gap: 24px; font-size: 15px; }
+  .nav-links a { color: var(--muted); text-decoration: none; transition: color 0.2s; font-weight: 500; }
+  .nav-links a:hover { color: var(--ink); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: "Figtree", sans-serif; font-weight: 600; font-size: 15px;
+    padding: 11px 20px; border-radius: 10px; text-decoration: none; cursor: pointer;
+    border: 1px solid transparent; transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  }
+  .btn-primary { background: var(--green); color: #fff; box-shadow: 0 8px 20px -8px rgba(15, 138, 86, 0.55); }
+  .btn-primary:hover { transform: translateY(-2px); background: var(--green-bright); box-shadow: 0 14px 28px -8px rgba(15, 138, 86, 0.6); }
+  .btn-ghost { background: var(--card); color: var(--ink); border-color: var(--line2); }
+  .btn-ghost:hover { border-color: var(--green); color: var(--green); }
+
+  /* ---- hero ---- */
+  header.hero { padding: 84px 0 36px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 500; color: var(--green);
+    border: 1px solid var(--green-line); border-radius: 100px; padding: 6px 15px;
+    background: var(--green-soft); margin-bottom: 26px;
+  }
+  h1 {
+    font-family: "Fraunces", serif; font-weight: 600; letter-spacing: -0.02em;
+    font-size: clamp(40px, 6.6vw, 72px); line-height: 1.02; margin-bottom: 22px; color: var(--ink);
+  }
+  h1 .accent { color: var(--green); font-style: italic; }
+  .lede { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 610px; margin-bottom: 32px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .cta-note { font-size: 14px; color: var(--faint); }
+
+  .reveal { opacity: 0; transform: translateY(16px); animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.16s; } .d3 { animation-delay: 0.28s; }
+  .d4 { animation-delay: 0.4s; } .d5 { animation-delay: 0.52s; }
+
+  /* progressive reveal for the demo video kit; window.setReveal drives it. Every
+     [data-step] is fully shown on a normal page load, so the live page is unchanged. */
+  [data-step] { transition: opacity 0.4s ease; }
+  [data-step].dim { opacity: 0.08; }
+
+  /* ---- receipt / chat card ---- */
+  .card-console {
+    margin-top: 50px; border: 1px solid var(--line); border-radius: 16px;
+    background: var(--card); box-shadow: var(--shadow-lg); overflow: hidden;
+  }
+  .cc-bar { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: #fcfcfa; }
+  .cc-bar .lamp { width: 10px; height: 10px; border-radius: 50%; background: #e6e4da; }
+  .cc-bar .lamp.g { background: var(--green-bright); }
+  .cc-title { margin-left: 8px; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--faint); }
+  .cc-body { padding: 22px 22px 24px; font-size: 15.5px; }
+  .line { padding: 3px 0; white-space: pre-wrap; word-break: break-word; }
+  .prompt { color: var(--green); font-weight: 600; font-family: "IBM Plex Mono", monospace; font-size: 14.5px; }
+  .u { color: var(--ink); }
+  .sys { color: var(--faint); font-size: 14.5px; }
+  .ok { color: var(--green); font-weight: 500; }
+  .amber { color: var(--amber); font-weight: 500; }
+  .muted { color: var(--muted); }
+  .rcpt { margin-top: 14px; border: 1px solid var(--green-line); border-radius: 12px; padding: 15px 17px; background: var(--green-soft); }
+  .rcpt .kv { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 15px; }
+  .rcpt .kv span:first-child { color: var(--muted); }
+  a.tx { color: var(--green); text-decoration: none; font-family: "IBM Plex Mono", monospace; font-size: 14px; border-bottom: 1px solid var(--green-line); }
+  a.tx:hover { color: var(--green-bright); }
+
+  /* ---- ask box ---- */
+  .ask-form { display: flex; gap: 10px; margin-top: 18px; }
+  .ask-form input {
+    flex: 1; background: #fbfcfa; border: 1px solid var(--line2); border-radius: 11px;
+    color: var(--ink); font-family: "Figtree", sans-serif; font-size: 16px; padding: 13px 16px;
+  }
+  .ask-form input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+  .ask-form button { border: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { font-size: 13.5px; color: var(--muted); border: 1px solid var(--line2); border-radius: 100px; padding: 6px 13px; cursor: pointer; background: var(--card); transition: all 0.15s; font-family: "Figtree", sans-serif; }
+  .chip:hover { border-color: var(--green); color: var(--green); }
+  .status-pill { font-size: 12.5px; padding: 4px 10px; border-radius: 100px; border: 1px solid var(--line2); color: var(--faint); font-family: "IBM Plex Mono", monospace; }
+  .status-pill.live { color: var(--green); border-color: var(--green-line); background: var(--green-soft); }
+
+  /* ---- judge try cards ---- */
+  .judge-try { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  .jt-card { border: 1px solid var(--line); border-radius: 14px; padding: 24px; background: var(--card); box-shadow: var(--shadow); }
+  .jt-card .jt-n { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--green); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+  .jt-card h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 20px; margin: 8px 0 8px; letter-spacing: -0.01em; }
+  .jt-card p { color: var(--muted); font-size: 15px; margin-bottom: 18px; }
+  @media (max-width: 720px) { .judge-try { grid-template-columns: 1fr; } }
+
+  /* ---- sections ---- */
+  section { padding: 76px 0; border-top: 1px solid var(--line); }
+  section.alt { background: var(--bg-tint); }
+  .eyebrow { font-size: 14px; font-weight: 600; color: var(--green); letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 14px; }
+  h2 { font-family: "Fraunces", serif; font-weight: 600; letter-spacing: -0.015em; font-size: clamp(28px, 4vw, 42px); margin-bottom: 16px; line-height: 1.08; }
+  .sub { color: var(--muted); max-width: 640px; font-size: 18px; margin-bottom: 40px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .step { border: 1px solid var(--line); border-radius: 14px; padding: 24px; background: var(--card); box-shadow: var(--shadow); transition: transform 0.18s; }
+  .step:hover { transform: translateY(-3px); }
+  .step .n { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--green); font-weight: 500; }
+  .step h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 22px; margin: 12px 0 8px; letter-spacing: -0.01em; }
+  .step p { color: var(--muted); font-size: 15.5px; }
+
+  .proof { border: 1px solid var(--line2); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: var(--shadow); }
+  .proof .head { display: flex; justify-content: space-between; align-items: center; padding: 17px 22px; border-bottom: 1px solid var(--line); font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); flex-wrap: wrap; gap: 10px; background: #fcfcfa; }
+  .row-tx { display: grid; grid-template-columns: 1.4fr 1.5fr 0.9fr auto; gap: 14px; align-items: center; padding: 15px 22px; border-bottom: 1px solid var(--line); font-size: 14.5px; transition: background 0.15s; }
+  .row-tx:last-child { border-bottom: none; }
+  .row-tx:hover { background: var(--green-soft); }
+  .row-tx .what { color: var(--ink); font-weight: 500; }
+  .row-tx .res { color: var(--muted); }
+  .row-tx .amt { color: var(--amber); font-family: "IBM Plex Mono", monospace; font-size: 13.5px; }
+  .row-tx .st { color: var(--green); font-weight: 600; }
+  @media (max-width: 720px) {
+    .row-tx { grid-template-columns: 1fr 1fr; }
+    .row-tx .amt, .row-tx .st { display: none; }
+  }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 28px; background: var(--card); box-shadow: var(--shadow); }
+  .card h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 22px; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .card p { color: var(--muted); font-size: 15.5px; }
+  .card .big { font-family: "Fraunces", serif; color: var(--green); font-size: 44px; font-weight: 600; display: block; margin-bottom: 4px; line-height: 1; }
+
+  .judge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
+  .jc { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--card); }
+  .jc .w { font-family: "IBM Plex Mono", monospace; color: var(--amber); font-size: 14px; font-weight: 500; }
+  .jc h4 { font-size: 16px; margin: 8px 0 6px; font-weight: 600; }
+  .jc p { color: var(--muted); font-size: 14px; }
+
+  .roadmap { margin-top: 22px; border: 1px dashed var(--line2); border-radius: 12px; padding: 18px 22px; background: var(--card); display: flex; gap: 14px; align-items: flex-start; }
+  .roadmap .badge { font-size: 12.5px; font-weight: 600; color: var(--amber); background: var(--amber-soft); border-radius: 100px; padding: 4px 12px; white-space: nowrap; }
+  .roadmap p { color: var(--muted); font-size: 15px; }
+  .roadmap b { color: var(--ink); }
+
+  .faq { display: grid; gap: 12px; max-width: 800px; }
+  .faq details { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 2px 22px; box-shadow: var(--shadow); transition: border-color 0.15s; }
+  .faq details[open] { border-color: var(--green-line); }
+  .faq summary { cursor: pointer; padding: 18px 0; font-weight: 600; font-size: 17px; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; color: var(--green); font-size: 24px; font-weight: 400; line-height: 1; }
+  .faq details[open] summary::after { content: "\2212"; }
+  .faq details p { color: var(--muted); font-size: 15.5px; padding: 0 0 20px; line-height: 1.6; }
+  .faq details p b { color: var(--ink); }
+
+  footer { border-top: 1px solid var(--line); padding: 48px 0 64px; color: var(--faint); font-size: 14px; }
+  footer .row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 18px; align-items: center; }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--green); }
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; font-family: "IBM Plex Mono", monospace; font-size: 12px; margin-top: 8px; }
+  .stack span { border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; color: var(--muted); background: var(--card); }
+
+  @media (max-width: 720px) {
+    .steps, .split, .judge { grid-template-columns: 1fr; }
+    .nav-links a.hide { display: none; }
+    header.hero { padding: 56px 0 20px; }
+    body { font-size: 16px; }
+  }
+  /* ---- contracts panel ---- */
+  .cgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cbox { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: var(--card); box-shadow: var(--shadow); }
+  .cbox h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 19px; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .cbox p { color: var(--muted); font-size: 14.5px; margin-bottom: 14px; }
+  .cbox .addr { display: block; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; word-break: break-all; color: var(--green); text-decoration: none; border-bottom: 1px solid var(--green-line); padding-bottom: 3px; }
+  .cbox .addr:hover { color: var(--green-bright); }
+  .cbox .meta { margin-top: 12px; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--faint); }
+  .cbox .meta a { color: var(--muted); }
+  .compiler { margin-top: 20px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
+
+  /* ---- live channel panel ---- */
+  .panel { border: 1px solid var(--line2); border-radius: 16px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+  .panel .phead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 22px; border-bottom: 1px solid var(--line); background: #fcfcfa; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); }
+  .stat { background: var(--card); padding: 20px 22px; }
+  .stat .k { font-size: 12px; color: var(--faint); font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .v { font-family: "Fraunces", serif; font-size: 30px; font-weight: 600; color: var(--ink); line-height: 1.1; margin-top: 6px; }
+  .stat .v.g { color: var(--green); }
+  .stat .n { font-size: 12.5px; color: var(--faint); margin-top: 4px; }
+  .prow { display: grid; grid-template-columns: 1.7fr 0.7fr 1fr 1fr; gap: 12px; padding: 13px 22px; border-bottom: 1px solid var(--line); font-size: 14px; align-items: center; }
+  .prow:last-child { border-bottom: none; }
+  .prow.h { background: #fcfcfa; color: var(--faint); font-family: "IBM Plex Mono", monospace; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .prow .who { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted); word-break: break-all; }
+  .notice { padding: 22px; color: var(--muted); font-size: 15px; }
+  .notice b { color: var(--ink); }
+  .notice .why { display: block; margin-top: 7px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--faint); word-break: break-all; }
+  .capbar { height: 8px; border-radius: 6px; background: var(--line); overflow: hidden; margin-top: 8px; }
+  .capbar > span { display: block; height: 100%; background: var(--green-bright); transition: width 0.5s cubic-bezier(0.2,0.7,0.2,1); }
+  .capbar.full > span { background: var(--amber); }
+
+  @media (max-width: 720px) {
+    .cgrid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .prow { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>MoonWalk</h1>
-  <p class="sub">USDC nanopayment rails for agent commerce, live on Arc mainnet (chain 5042).
-  <span class="pill live" id="chip">reading the chain...</span></p>
 
-  <p>An agent that charges per call cannot settle each $0.001 call on-chain, because the fee costs
-  more than the call. MoonWalk fixes that with a payment channel. The payer funds once by signing an
-  authorization and never sends a transaction again. It signs one cumulative voucher per call. The
-  service redeems a whole batch in a single transfer. On top of that, each person in a shared channel
-  has a spend cap enforced by a contract, so one agent wallet serves many humans and nobody can be
-  overspent, the operator included.</p>
-
-  <p class="muted">Why Arc: gas is USDC itself, so the fee and the payment are the same asset and the
-  fee-to-value ratio is fixed at design time. Arc has single-block finality, so a channel close is
-  final in one block with no confirmation counting and no reorg to handle. Everything below is read
-  live from the public Arc RPC in your browser. Nothing here needs a wallet or any funds.</p>
-
-  <h2>The live channel on Arc mainnet</h2>
-  <div class="panel">
-    <div class="kv"><span class="k">channel id</span><span class="v addr" id="cid"></span></div>
-    <div class="kv"><span class="k">deposit</span><span class="v" id="deposit">...</span></div>
-    <div class="kv"><span class="k">redeemed to the service</span><span class="v" id="redeemed">...</span></div>
-    <div class="kv"><span class="k">outstanding</span><span class="v" id="outstanding">...</span></div>
-    <div class="kv"><span class="k">guarded by SpendGuard</span><span class="v" id="guarded">...</span></div>
-    <div class="kv"><span class="k">settled</span><span class="v" id="settled">...</span></div>
-    <p class="status" id="blockstat">read at block ...</p>
-  </div>
-
-  <h2>Per-person caps, enforced on-chain</h2>
-  <p class="muted">Two people share this one channel. Each has a cap the contract enforces at redeem
-  time. A voucher that would push a person over their cap cannot be redeemed by anyone.</p>
-  <div class="grid">
-    <div class="panel">
-      <div class="kv"><span class="k">alice</span><span class="v" id="alice_use">...</span></div>
-      <div class="bar" id="alice_bar"><span style="width:0%"></span></div>
-      <p class="muted" id="alice_txt"></p>
-    </div>
-    <div class="panel">
-      <div class="kv"><span class="k">bob</span><span class="v" id="bob_use">...</span></div>
-      <div class="bar" id="bob_bar"><span style="width:0%"></span></div>
-      <p class="muted" id="bob_txt"></p>
+<nav>
+  <div class="wrap row">
+    <div class="brand"><span class="dot"></span>MoonWalk</div>
+    <div class="nav-links">
+      <a href="#contracts" class="hide">Contracts</a>
+      <a href="#live" class="hide">Live on-chain</a>
+      <a href="#how" class="hide">How it works</a>
+      <a href="#proof" class="hide">Mainnet proof</a>
+      <a href="#why" class="hide">Why</a>
+      <a href="#faq" class="hide">FAQ</a>
+      <a class="btn btn-ghost" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
-  <div class="panel refuse">
-    <strong>The refusal, read live.</strong>
-    <p class="muted" id="refuse_txt">Bob has spent his cap. The next $0.001 voucher for bob would take
-    him over it, so <code>SpendGuard.consume</code> reverts <code>CapExceeded</code> and the redeem
-    cannot settle it. This is a contract rule, not a server promise.</p>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="tag reveal d1"><span class="dot" style="width:7px;height:7px;box-shadow:none"></span>Live on Arc mainnet · chain 5042 · three contracts deployed</span>
+    <h1 class="reveal d2">Nanopayments that cost<br /><span class="accent">less than the call.</span></h1>
+    <p class="lede reveal d3">MoonWalk is the payment channel that makes a $0.001 call worth settling. The payer funds once with a signed authorization, then signs <b>one cumulative voucher per call</b>. The service redeems the whole batch in <b>one transaction</b>, so the fee is shared across every call instead of paid per call. Each person also gets a spend cap held in the contract, so one agent can serve a whole channel of people without anyone trusting the operator. Live on Arc mainnet: the panel below reads the proof channel straight from the chain.</p>
+    <div class="cta-row reveal d4">
+      <a class="btn btn-primary" href="#live">Read the live channel ↓</a>
+      <a class="btn btn-ghost" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add the bot to Discord</a>
+      <span class="cta-note">Encode × Circle Programmable Money</span>
+    </div>
+
+    <div class="card-console reveal d5">
+      <div class="cc-bar">
+        <span class="lamp"></span><span class="lamp"></span><span class="lamp g"></span>
+        <span class="cc-title">moonwalk · channel · Arc mainnet</span>
+      </div>
+      <div class="cc-body" id="heroTerm"></div>
+    </div>
   </div>
+</header>
 
-  <h2>Contracts and the proof run</h2>
-  <div class="panel" id="addrs"></div>
+<!-- CONTRACTS -->
+<section id="contracts">
+  <div class="wrap">
+    <div class="eyebrow">Deployed, not described</div>
+    <h2>Three contracts, live on Arc mainnet.</h2>
+    <p class="sub">Deployed to Arc mainnet from <span class="mono" style="color:var(--muted)">contracts/script/Deploy.s.sol</span> and verified on Sourcify and explorer.arc.io. Click an address to read it on the explorer.</p>
+    <div class="cgrid">
+      <div class="cbox" data-step>
+        <h3>NanoChannel</h3>
+        <p>The unidirectional USDC channel. Funded by a signed EIP-3009 authorization, metered by cumulative vouchers, settled in batches, closed by either side.</p>
+        <a class="addr" href="https://explorer.arc.io/address/0x059D3A87E91fA91D341f364868A9Ed333077989a" target="_blank" rel="noopener">0x059D3A87E91fA91D341f364868A9Ed333077989a ↗</a>
+        <div class="meta">deploy <a href="https://explorer.arc.io/tx/0xd6a671181e6ff04618442ed72dc65a989b17ebb519bebfdddc7ae10092c409b9" target="_blank" rel="noopener">d6a67118 ↗</a> · 38 forge tests</div>
+      </div>
+      <div class="cbox" data-step>
+        <h3>SpendGuard</h3>
+        <p>Per-person spend caps, lifetime or windowed, with a scope default and per-subject overrides. Unconfigured means zero, so it fails closed.</p>
+        <a class="addr" href="https://explorer.arc.io/address/0xAbB85ab157357676eBE7ae17A161168912A3c232" target="_blank" rel="noopener">0xAbB85ab157357676eBE7ae17A161168912A3c232 ↗</a>
+        <div class="meta">deploy <a href="https://explorer.arc.io/tx/0xe3d03d14292864518aa0a06068613c9ca992a8cd6f2dcb5897555a603bd21f77" target="_blank" rel="noopener">e3d03d14 ↗</a> · 11 forge tests</div>
+      </div>
+      <div class="cbox" data-step>
+        <h3>ServiceRegistry</h3>
+        <p>A namespaced priced catalog of machine-callable services. Anyone lists. A namespace admin verifies. Any price change drops the verification.</p>
+        <a class="addr" href="https://explorer.arc.io/address/0x1b9FF1FAD0181705B750C325B3A82137bB153866" target="_blank" rel="noopener">0x1b9FF1FAD0181705B750C325B3A82137bB153866 ↗</a>
+        <div class="meta">deploy <a href="https://explorer.arc.io/tx/0xae1dfdd3a3ab4e8afd274da09411086b0405c913dcfab6a6dbd64873ccd42e4f" target="_blank" rel="noopener">ae1dfdd3 ↗</a> · 11 forge tests</div>
+      </div>
+    </div>
+    <div class="compiler">
+      solc 0.8.24 · evm_version cancun · optimizer on, 200 runs · chain 5042<br />
+      USDC <a href="https://explorer.arc.io/address/0x3600000000000000000000000000000000000000" target="_blank" rel="noopener" style="color:var(--muted)">0x3600…0000</a>, 6 decimals, EIP-712 domain name "USDC" version "2"<br />
+      verified on Sourcify and explorer.arc.io · 66 forge tests pass, 210 pytest tests pass, mypy and ruff clean
+    </div>
+  </div>
+</section>
 
-  <p class="muted">More: <a href="overview.html">full overview</a> ·
-  <a href="https://github.com/zkasuran/moonwalk" target="_blank">source</a> ·
-  <a href="https://github.com/zkasuran/moonwalk/blob/main/docs/SPEC.md" target="_blank">spec</a> ·
-  <a href="https://github.com/zkasuran/moonwalk/blob/main/docs/SECURITY.md" target="_blank">security</a></p>
-</main>
+<!-- LIVE ON-CHAIN -->
+<section id="live" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Try it yourself, no wallet needed</div>
+    <h2>The proof channel, read live on Arc mainnet.</h2>
+    <p class="sub">This panel calls the public Arc mainnet RPC straight from your browser with viem. No API, no server, no wallet, no funds. Every number is read from NanoChannel and SpendGuard at the block shown, so refresh and it reads again. If a read fails the panel says so rather than showing a figure.</p>
+    <div class="panel">
+      <div class="phead">
+        <span id="chanId">channel: reading the chain…</span>
+        <span class="status-pill" id="chanPill">reading…</span>
+      </div>
+      <div id="liveBody">
+        <div class="stats">
+          <div class="stat"><div class="k">deposit</div><div class="v" id="v_deposit">…</div><div class="n">funded on-chain</div></div>
+          <div class="stat"><div class="k">redeemed</div><div class="v g" id="v_redeemed">…</div><div class="n">settled to the service</div></div>
+          <div class="stat"><div class="k">outstanding</div><div class="v" id="v_outstanding">…</div><div class="n">left in the channel</div></div>
+          <div class="stat"><div class="k">state</div><div class="v" id="v_state">…</div><div class="n" id="v_guarded">…</div></div>
+        </div>
+        <div class="prow h"><span>person, as a hashed subject</span><span>cap</span><span>used</span><span>remaining</span></div>
+        <div class="prow"><span class="who" id="alice_subj">alice</span><span class="mono" id="alice_cap" style="font-size:13px">…</span><span class="mono" id="alice_used" style="font-size:13px">…</span><span class="mono" id="alice_rem" style="font-size:13px">…</span></div>
+        <div style="padding:2px 22px 14px"><div class="capbar" id="alice_bar"><span style="width:0%"></span></div><p class="muted" id="alice_txt" style="margin:7px 0 0;font-size:13px"></p></div>
+        <div class="prow"><span class="who" id="bob_subj">bob</span><span class="mono" id="bob_cap" style="font-size:13px">…</span><span class="mono" id="bob_used" style="font-size:13px">…</span><span class="mono" id="bob_rem" style="font-size:13px">…</span></div>
+        <div style="padding:2px 22px 14px"><div class="capbar" id="bob_bar"><span style="width:0%"></span></div><p class="muted" id="bob_txt" style="margin:7px 0 0;font-size:13px"></p></div>
+        <div class="notice" style="border-top:1px solid var(--line)"><span id="refuse_txt">The next voucher over a person's cap makes <span class="mono">SpendGuard.consume</span> revert <span class="mono">CapExceeded</span>, so <span class="mono">redeem</span> cannot settle it. This is a contract rule, not a server promise.</span><span class="why" id="blockstat">reading the block…</span></div>
+      </div>
+    </div>
+    <div class="judge-try">
+      <div class="jt-card">
+        <div class="jt-n">Read it</div>
+        <h3>Read the source</h3>
+        <p>The three contracts, the voucher and cap mechanics and the tests are all public. Read the code that backs every number on this page.</p>
+        <a class="btn btn-primary" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">Open the repo</a>
+      </div>
+      <div class="jt-card">
+        <div class="jt-n">Or run the agent</div>
+        <h3>Add the bot to your server</h3>
+        <p>NanoPay is the agent surface on these rails. Add it to any Discord server you manage and it syncs its commands instantly.</p>
+        <a class="btn btn-ghost" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add to your server</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how">
+  <div class="wrap">
+    <div class="eyebrow">The lifecycle</div>
+    <h2>Sign → check → settle.</h2>
+    <p class="sub">One endpoint offers both rails. The 402 carries the x402 requirements in <span class="mono" style="color:var(--muted)">PAYMENT-REQUIRED</span> and the channel offer in <span class="mono" style="color:var(--muted)">X-CHANNEL-REQUIRED</span>. The caller picks by which header it sends back.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="n">01 · SIGN</div>
+        <h3>A voucher, not a transaction</h3>
+        <p>The payer funds the channel once with a signed EIP-3009 authorization, then signs one EIP-712 voucher per call. A voucher is a cumulative total for one person, so the newest one supersedes every earlier one and a lost voucher costs nothing.</p>
+      </div>
+      <div class="step">
+        <div class="n">02 · CHECK</div>
+        <h3>Against the contract, not a config</h3>
+        <p>Before the work happens the service checks the signature, the cumulative and that person's SpendGuard cap. It reads the cap from the contract, so refusing a call and failing to redeem it can never disagree.</p>
+      </div>
+      <div class="step">
+        <div class="n">03 · SETTLE</div>
+        <h3>One transaction, every call</h3>
+        <p>Once enough has accrued the service calls <span class="mono" style="color:var(--muted)">redeem</span> with the newest voucher per person. One transaction, one USDC transfer, every call since the last redeem. The payer's own tx count stays <span class="ok mono">0</span>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROOF (mainnet) -->
+<section id="proof">
+  <div class="wrap">
+    <div class="eyebrow">Proved on Arc mainnet</div>
+    <h2>Real USDC, moving on Arc mainnet.</h2>
+    <p class="sub">One full run of the channel lifecycle on Arc mainnet: open, redeem, close. The live panel above reads the end state of this same channel from the chain. Click any hash to read it on explorer.arc.io.</p>
+    <div class="proof" style="margin-bottom:20px">
+      <div class="head">
+        <span>the channel lifecycle · one run on Arc mainnet · chain 5042</span>
+        <span>the panel above reads this same channel live</span>
+      </div>
+      <div class="row-tx">
+        <span class="what">open · EIP-3009 deposit, no payer tx</span>
+        <span class="res">$0.100000 funded into the channel</span>
+        <span class="amt">deposit</span>
+        <span><a class="tx" href="https://explorer.arc.io/tx/0x29ee88ffd01e6a4cce6a1fcf53aeb3c1a55f215a10bf6ffbb90c19eb698da69e" target="_blank" rel="noopener">29ee88ff ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx" style="background:var(--green-soft)">
+        <span class="what"><b>redeem · a batch in ONE transaction</b></span>
+        <span class="res">$0.030000 settled from two capped subjects</span>
+        <span class="amt">−$0.030000</span>
+        <span><a class="tx" href="https://explorer.arc.io/tx/0x73da5637c59fb38c2ddb2d604c1c0b6b4c753abfb71c85200a0d9ef1161c49bf" target="_blank" rel="noopener">73da5637 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">close · channel settled</span>
+        <span class="res">outstanding returns to $0.000000</span>
+        <span class="amt">closed</span>
+        <span><a class="tx" href="https://explorer.arc.io/tx/0x4c5c2254e9ad8e2806af47168188fe37a316bf0ce4b566b51437a034c46cb637" target="_blank" rel="noopener">4c5c2254 ↗</a> <span class="st">✓</span></span>
+      </div>
+    </div>
+    <p class="sub" style="margin-bottom:0;font-size:15.5px">Deposit $0.100000, redeemed $0.030000 in one transaction across two capped subjects, then closed with outstanding back to $0.000000. On Arc mainnet the payer <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> has a transaction count of <b>0</b>, so every transaction was submitted by the service. The panel above reads this same channel from the chain, so the proof does not need us.</p>
+  </div>
+</section>
+
+<!-- TESTNET BUILD -->
+<section id="testnet" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Proved on Arc testnet during the build</div>
+    <h2>The full lifecycle, first proven on testnet.</h2>
+    <p class="sub">Before mainnet the same contracts ran end to end on Arc testnet, where the per-call economics were measured. This is testnet, labelled testnet. Every hash links to the Arc testnet explorer.</p>
+    <div class="proof" style="margin-bottom:20px">
+      <div class="head">
+        <span>the channel lifecycle · one run of <span class="mono" style="color:var(--muted)">scripts/channel_demo.py</span> · 2026-07-29</span>
+        <span>amounts are the gas fee, paid by the service in USDC</span>
+      </div>
+      <div class="row-tx">
+        <span class="what">open · EIP-3009 deposit, no payer tx</span>
+        <span class="res">$0.20 funded, 218,926 gas</span>
+        <span class="amt">−$0.005473</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x9923effffcc65964c0998a1ec7abe9a033776af80c6103bb0fe02c5f3fd9ded5" target="_blank" rel="noopener">9923efff ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">caps · default $0.005 for anyone</span>
+        <span class="res">set in SpendGuard, 71,829 gas</span>
+        <span class="amt">−$0.001795</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x030f5352856ed5cb57c75445952aa89b6744f94f6705d74423d7b43ca9881673" target="_blank" rel="noopener">030f5352 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">caps · alice raised to $0.06</span>
+        <span class="res">per-person override, 72,788 gas</span>
+        <span class="amt">−$0.001819</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xd0e2bc33a606d8545aefb2ceba5bbcac5c2011857e0198ac02b67a97e792ba28" target="_blank" rel="noopener">d0e2bc33 ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx" style="background:var(--green-soft)">
+        <span class="what"><b>redeem · 30 calls in ONE transaction</b></span>
+        <span class="res">$0.03 settled from 2 vouchers, 262,639 gas</span>
+        <span class="amt">−$0.006565</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0xb779492a6c66abc1d98e4ca13786fd9b968843a9f10e07b0a27620c89f11767a" target="_blank" rel="noopener">b779492a ↗</a> <span class="st">✓</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">cap refusal · a voucher $0.001 over the cap</span>
+        <span class="res">reverted <span class="mono">CapExceeded</span>, so nobody can redeem it</span>
+        <span class="amt">$0.000000</span>
+        <span><span class="amber">no tx possible</span></span>
+      </div>
+      <div class="row-tx">
+        <span class="what">closeMutual · both signatures, service submits</span>
+        <span class="res">$0.17 refunded to the payer, 81,277 gas</span>
+        <span class="amt">−$0.002031</span>
+        <span><a class="tx" href="https://testnet.arcscan.app/tx/0x622b3619ab023019c422ac1e158bbc14923e8e03a484ee50ba1cb4df9e8e4c4f" target="_blank" rel="noopener">622b3619 ↗</a> <span class="st">✓</span></span>
+      </div>
+    </div>
+    <p class="sub" style="margin-bottom:0;font-size:15.5px">Payer <span class="mono" style="color:var(--green)">0x6a1b…01c4</span> went from 9.788000 to 9.758000 USDC, exactly the $0.03 that was metered. Its transaction count was <b>0 before and 0 after</b>. Thirty paid calls, a deposit, a batch settlement and a close, with nothing sent from the payer. The 30 vouchers were also hashed locally and checked against the contract's own <span class="mono">voucherHash</span> view before the batch went out. The marketplace and Circle integrations were exercised on testnet too, with receipts in the repo.</p>
+  </div>
+</section>
+
+<!-- WHY -->
+<section id="why">
+  <div class="wrap">
+    <div class="eyebrow">The two ideas</div>
+    <h2>Cheap enough to meter. Bounded per person.</h2>
+    <p class="sub">Both figures below were measured on Arc testnet during the build, on the receipts in the section above. Neither is a projection.</p>
+    <div class="split">
+      <div class="card">
+        <span class="big">$0.000219</span>
+        <h3>to settle one $0.001 call</h3>
+        <p>Thirty calls redeemed in one transaction cost $0.006565 in gas. On the per-call rail the same call costs $0.001873 to settle, which is nearly twice the price of the thing being bought. The payer's transaction count over the whole run: <span class="ok mono">0</span>. Measured on Arc testnet during the build.</p>
+      </div>
+      <div class="card">
+        <span class="big">1&nbsp;wallet, N&nbsp;caps</span>
+        <h3>each person capped in the contract</h3>
+        <p>A subject is <span class="mono" style="color:var(--muted)">keccak256("discord:&lt;guildId&gt;:&lt;userId&gt;")</span>, so SpendGuard holds a limit per person while the agent spends from one wallet. A voucher over someone's cap cannot be redeemed by anyone, the operator included. The live panel above shows bob already at his $0.005 cap on Arc mainnet, so his next voucher would revert <span class="mono" style="color:var(--muted)">CapExceeded</span>.</p>
+      </div>
+    </div>
+    <div class="judge">
+      <div class="jc"><div class="w">3</div><h4>contracts live</h4><p>NanoChannel, SpendGuard and ServiceRegistry, all on Arc mainnet.</p></div>
+      <div class="jc"><div class="w">66</div><h4>forge tests</h4><p>NanoChannel 38, SpendGuard 11, ServiceRegistry 11 and a 6-test invariant suite, including a fuzz test over redeem and cases for malleable and stale vouchers.</p></div>
+      <div class="jc"><div class="w">210</div><h4>pytest tests</h4><p>Deterministic and offline, network and model calls mocked. ruff and mypy strict clean on top.</p></div>
+      <div class="jc"><div class="w">0</div><h4>payer transactions</h4><p>The payer's transaction count on Arc mainnet is 0, deposit and close included.</p></div>
+    </div>
+    <div class="roadmap">
+      <span class="badge">Lineage</span>
+      <p><b>MoonWalk grew out of NanoPay.</b> The Discord agent and the per-call x402 rail were built for the Lepton Agents Hackathon (Canteen × Circle). NanoPay is still the agent surface and the live bot. New for the Encode × Circle Programmable Money Hackathon: the three contracts, the payment channel with cumulative vouchers, the on-chain per-person caps, the ServiceRegistry, the dual-rail 402 with its <span class="mono" style="color:var(--muted)">/channel</span> endpoints plus the proof run above. The rails are the new work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- VERIFY -->
+<section id="verify" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Check it yourself</div>
+    <h2>Nothing here needs our uptime.</h2>
+    <p class="sub">The contracts are on Arc mainnet and the repo is public, so every number on this page can be re-derived from a clone. The first command is offline. The second reads the live channel straight off the chain and needs no keys.</p>
+    <div class="card-console" id="verify-run" style="margin-top:26px">
+      <div class="cc-bar"><span class="lamp"></span><span class="lamp"></span><span class="lamp g"></span><span class="cc-title">clone → verify</span></div>
+      <div class="cc-body">
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">git clone https://github.com/zkasuran/moonwalk &amp;&amp; cd moonwalk</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">cd contracts &amp;&amp; forge test</span> <span class="sys">→ 66 passed, 0 failed</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">make dev-install &amp;&amp; make lint &amp;&amp; make test</span> <span class="sys">→ ruff and mypy clean, 210 passed</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">make channel-demo</span> <span class="sys">→ the whole lifecycle on Arc mainnet, writes evidence/channel-&lt;stamp&gt;.json</span></div>
+        <div class="line" data-step><span class="prompt">$</span> <span class="u">.venv/bin/python scripts/open_channel.py</span> <span class="sys">→ reads the production channel straight off the chain</span></div>
+        <div class="line sys" data-step>Every claim above traces to a file in <span class="mono">evidence/</span>, written by the run that produced it.</div>
+      </div>
+    </div>
+    <div class="judge-try" style="margin-top:22px">
+      <div class="card">
+        <h3>Read the design</h3>
+        <p>The three contracts, the voucher and cap mechanics with the EIP-712 type strings and the tests are all in the <a href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">repo</a>. The <a href="SECURITY.md">security notes</a> carry the honest-limits list in full.</p>
+      </div>
+      <div class="card">
+        <h3>Read it on-chain</h3>
+        <p>Every address is on <a href="https://explorer.arc.io/address/0x059D3A87E91fA91D341f364868A9Ed333077989a" target="_blank" rel="noopener">explorer.arc.io</a> and verified on Sourcify. The <a href="#live">panel above</a> reads the proof channel straight from the chain, no server in the path.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">For the judges</div>
+    <h2>Every question, answered.</h2>
+    <p class="sub">The honest version, up front.</p>
+    <div class="faq">
+      <details open>
+        <summary>Is the money real?</summary>
+        <p>Yes. Real USDC moves between two <b>distinct</b> wallets on Arc mainnet, status 1 on every receipt. You can click each hash on this page. They are permanent on-chain records that need no server to verify. In the mainnet proof run the channel was funded with $0.100000 and $0.030000 was redeemed to the service, which the panel above reads straight from the chain.</p>
+      </details>
+      <details>
+        <summary>Why a payment channel and not just x402 per call?</summary>
+        <p>Because the fee beats the price. One x402 settlement of a $0.001 call cost <b>$0.001873</b> in gas on Arc, measured during the build. The channel spreads that cost: 30 calls redeemed in one transaction cost $0.006565 in total, which is <b>$0.000219</b> a call. x402 is still the right rail for a first call or a one-off, so the same endpoint offers both. Those figures were measured on Arc testnet during the build and are labelled testnet on this page.</p>
+      </details>
+      <details>
+        <summary>Is the payer really gasless?</summary>
+        <p>On the happy path yes, measured rather than claimed: the payer's transaction count on Arc mainnet is 0 after a run that opened a channel, metered calls, settled them and closed. It signs the deposit, every voucher and the close. Anyone can submit those. In production the service does. <b>One exception:</b> if the service goes dark the payer has to send <span class="mono" style="color:var(--muted)">requestClose</span> and <span class="mono" style="color:var(--muted)">withdraw</span> itself, which needs USDC for gas.</p>
+      </details>
+      <details>
+        <summary>Is the agent really deciding or is it scripted?</summary>
+        <p>It is a real model tool-use call over a priced catalog. It can buy a tool, pick a different tool or answer for free and spend nothing. Ask it a greeting and it spends $0; ask for a live price and it buys one. The budget is enforced in code <b>after</b> the model picks, so a hallucinated number can never overspend.</p>
+      </details>
+      <details>
+        <summary>Why does the agent show 0 on-chain transactions if it paid?</summary>
+        <p>EIP-3009, the x402 "exact" scheme. The agent signs a transfer authorization off-chain; a facilitator broadcasts it and pays the gas. On every receipt the <span class="mono" style="color:var(--muted)">from</span> is the facilitator, not the agent. The <span class="mono" style="color:var(--muted)">to</span> is the USDC contract. The payer needs USDC, nothing else.</p>
+      </details>
+      <details>
+        <summary>What is genuinely yours versus the Circle SDK?</summary>
+        <p>The three contracts are ours: the channel, the cap enforcement and the registry, with 66 tests behind them. So is the Python chain package with its committed ABIs, the service-side rail that quotes and batches, the payer-side voucher client, the dual-rail 402 and the Discord surface. Circle's parts are USDC with EIP-3009 on Arc plus the x402 protocol plumbing. The settlement layer on top is the build.</p>
+      </details>
+      <details>
+        <summary>What stops one person draining the agent's wallet?</summary>
+        <p>SpendGuard, in the contract. Each person is a hashed subject with its own limit, lifetime or per window. A voucher that would push them past it makes <span class="mono" style="color:var(--muted)">redeem</span> revert. The operator cannot override that at redeem time. It also fails closed: a guarded channel with no cap configured cannot spend anything at all. When the bot sees a cap is reached it refuses the call rather than quietly switching to the other rail.</p>
+      </details>
+      <details>
+        <summary>Which Circle tools does it use?</summary>
+        <p>The x402 exact scheme, EIP-3009 USDC on Arc, an embedded facilitator that settles in-process plus USDC-as-gas. The two-wallet split (agent payer, service facilitator) is what makes each settlement a real transfer between distinct parties, not a wallet paying itself. The channel adds EIP-712 vouchers and EIP-3009 <span class="mono" style="color:var(--muted)">receiveWithAuthorization</span> for the deposit.</p>
+      </details>
+      <details>
+        <summary>Has anyone actually used it?</summary>
+        <p>The bot has been live and paying in Discord since early July. The channel rail proven here is new, so its evidence is the mainnet lifecycle run above and the panel that reads it live from the chain, not months of traffic. We report the real number, never an inflated one.</p>
+      </details>
+      <details>
+        <summary>What are the limits you are not hiding?</summary>
+        <p>If the service goes dark the payer reclaims the outstanding balance itself after the channel's challenge window, which costs it gas. The service trusts nothing but it does have to keep its vouchers: lose that store and it loses the right to collect. The Discord marketplace writes to the ServiceRegistry. The service wallet submits those transactions because a member has no wallet or gas, so a listing records the operator as its lister while payTo is the member's own address. The contracts are unaudited. The full list is in the README.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section style="text-align:center" class="alt">
+  <div class="wrap">
+    <h2>Meter an agent's spending without trusting it.</h2>
+    <p class="sub" style="margin: 0 auto 30px;">Add the bot and run <span class="mono">/channel</span> to see the deposit and the meters. Run <span class="mono">/cap</span> to hold someone to a limit the contract enforces.</p>
+    <a class="btn btn-primary" style="font-size:16px;padding:14px 28px" href="https://discord.com/oauth2/authorize?client_id=1517400111699726488&permissions=18432&scope=bot+applications.commands" target="_blank" rel="noopener">Add the bot to Discord</a>
+    <a class="btn btn-ghost" style="font-size:16px;padding:14px 28px" href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">Read the contracts</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <div>
+      <div class="brand" style="font-size:18px;margin-bottom:6px"><span class="dot"></span>MoonWalk</div>
+      <div class="stack">
+        <span>Solidity 0.8.24</span><span>Foundry</span><span>EIP-712</span><span>EIP-3009</span><span>x402</span><span>Arc mainnet</span><span>USDC</span><span>FastAPI</span>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div>Built for the Encode × Circle Programmable Money Hackathon, on Arc mainnet</div>
+      <div style="margin-top:8px"><a href="https://github.com/zkasuran/moonwalk" target="_blank" rel="noopener">github.com/zkasuran/moonwalk</a> · <a href="SECURITY.md">security notes</a> · <a href="https://explorer.arc.io/address/0x059D3A87E91fA91D341f364868A9Ed333077989a" target="_blank" rel="noopener">contracts on explorer.arc.io</a></div>
+      <div style="margin-top:8px;max-width:520px;margin-left:auto">AI assistance (Claude, Anthropic) was used in developing MoonWalk. The design, review and verification were done by the author. The live panel reads Arc mainnet straight from the public RPC. Every hash on this page links to a receipt you can open.</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Hero terminal: a short honest narration of the Arc mainnet proof run.
+  // The figures here match what the live panel below reads from the chain.
+  const MAIN_TX = "https://explorer.arc.io/tx/";
+  const heroScript = [
+    { c: "prompt", t: "$ python scripts/channel_demo.py", nl: true },
+    { c: "sys", t: "open   · payer signs a $0.10 deposit, the service submits it", nl: true },
+    { c: "sys", t: "caps   · alice $0.06, bob $0.005, held in SpendGuard", nl: true },
+    { c: "amber", t: "meter  · calls at $0.001, one signed voucher each, no payer gas", nl: true },
+    { c: "ok", t: "redeem · $0.03 settled in ONE transaction", nl: true },
+    { c: "amber", t: "guard  · bob at his $0.005 cap, the next voucher reverts CapExceeded", nl: true },
+    { receipt: true },
+  ];
+  const heroEl = document.getElementById("heroTerm");
+  function typeHero(i) {
+    if (!heroEl || i >= heroScript.length) return;
+    const step = heroScript[i];
+    if (step.receipt) {
+      const r = document.createElement("div");
+      r.className = "rcpt";
+      r.innerHTML =
+        '<div class="kv"><span>deposit funded</span><span class="u">$0.100000</span></div>' +
+        '<div class="kv"><span>redeemed in one tx</span><span class="amber">$0.030000</span></div>' +
+        '<div class="kv"><span>payer tx count</span><span class="ok">0 on Arc mainnet</span></div>' +
+        '<div class="kv"><span>receipt</span><a class="tx" href="' + MAIN_TX + '0x73da5637c59fb38c2ddb2d604c1c0b6b4c753abfb71c85200a0d9ef1161c49bf" target="_blank" rel="noopener">73da5637 ↗</a></div>';
+      heroEl.appendChild(r);
+      return;
+    }
+    const line = document.createElement("div");
+    line.className = "line";
+    const span = document.createElement("span");
+    span.className = step.c;
+    line.appendChild(span);
+    heroEl.appendChild(line);
+    let j = 0;
+    const speed = step.c === "prompt" ? 22 : 10;
+    (function tick() {
+      span.textContent = step.t.slice(0, j);
+      if (j <= step.t.length) { j++; setTimeout(tick, speed); }
+      else { setTimeout(() => typeHero(i + 1), step.nl ? 200 : 0); }
+    })();
+  }
+  setTimeout(() => typeHero(0), 700);
+</script>
+
 <script type="module">
-import { createPublicClient, http, defineChain, formatUnits } from 'https://esm.sh/viem@2';
+  // The live panel reads the proof channel and its caps straight from the public
+  // Arc mainnet RPC, in the browser. No API, no server, no wallet, no funds.
+  import { createPublicClient, http, defineChain, formatUnits } from 'https://esm.sh/viem@2';
 
-const RPC = 'https://rpc.mainnet.arc.io';
-const NANO = '0x059D3A87E91fA91D341f364868A9Ed333077989a';
-const GUARD = '0xAbB85ab157357676eBE7ae17A161168912A3c232';
-const REG = '0x1b9FF1FAD0181705B750C325B3A82137bB153866';
-const USDC = '0x3600000000000000000000000000000000000000';
-const CID = '0x3568a4362bed6a966882275e13aef25541cbb02fa07facb73e036d81276499cd';
-const ALICE = '0xfc7e16494510c7939a4deaba13680cfb725a5adaddeb9b2ef9fa65a5694798e4';
-const BOB = '0xe97d6031c3ce217563fe9723dc7682f7c397e2ad990c004fa761686cc9034f3d';
-const TX = { open:'0x29ee88ffd01e6a4cce6a1fcf53aeb3c1a55f215a10bf6ffbb90c19eb698da69e',
-  redeem:'0x73da5637c59fb38c2ddb2d604c1c0b6b4c753abfb71c85200a0d9ef1161c49bf',
-  close:'0x4c5c2254e9ad8e2806af47168188fe37a316bf0ce4b566b51437a034c46cb637' };
+  const RPC = 'https://rpc.mainnet.arc.io';
+  const NANO = '0x059D3A87E91fA91D341f364868A9Ed333077989a';
+  const GUARD = '0xAbB85ab157357676eBE7ae17A161168912A3c232';
+  const CID = '0x3568a4362bed6a966882275e13aef25541cbb02fa07facb73e036d81276499cd';
+  const ALICE = '0xfc7e16494510c7939a4deaba13680cfb725a5adaddeb9b2ef9fa65a5694798e4';
+  const BOB = '0xe97d6031c3ce217563fe9723dc7682f7c397e2ad990c004fa761686cc9034f3d';
 
-const arc = defineChain({ id:5042, name:'Arc', nativeCurrency:{name:'USDC',symbol:'USDC',decimals:18},
-  rpcUrls:{default:{http:[RPC]}}, blockExplorers:{default:{name:'Arc Explorer',url:'https://explorer.arc.io'}} });
-const client = createPublicClient({ chain:arc, transport:http(RPC) });
-const usd = (a) => '$' + Number(formatUnits(a, 6)).toFixed(6).replace(/0+$/,'').replace(/\.$/,'.0');
-const $ = (id) => document.getElementById(id);
-const exp = (p,h) => `https://explorer.arc.io/${p}/${h}`;
+  const arc = defineChain({ id: 5042, name: 'Arc', nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+    rpcUrls: { default: { http: [RPC] } }, blockExplorers: { default: { name: 'Arc Explorer', url: 'https://explorer.arc.io' } } });
+  const client = createPublicClient({ chain: arc, transport: http(RPC) });
 
-const nanoAbi = [
-  { type:'function', name:'channelOf', stateMutability:'view', inputs:[{type:'bytes32'}],
-    outputs:[{type:'tuple',components:[{name:'payer',type:'address'},{name:'service',type:'address'},
-    {name:'deposit',type:'uint256'},{name:'redeemed',type:'uint256'},{name:'closeAt',type:'uint64'},
-    {name:'guarded',type:'bool'},{name:'settled',type:'bool'}]}] },
-  { type:'function', name:'outstanding', stateMutability:'view', inputs:[{type:'bytes32'}], outputs:[{type:'uint256'}] } ];
-const guardAbi = [
-  { type:'function', name:'remaining', stateMutability:'view',
-    inputs:[{type:'address'},{type:'bytes32'},{type:'bytes32'}], outputs:[{type:'uint256'}] },
-  { type:'function', name:'capOf', stateMutability:'view',
-    inputs:[{type:'address'},{type:'bytes32'},{type:'bytes32'}],
-    outputs:[{type:'uint256'},{type:'uint64'},{type:'bool'}] } ];
+  const $ = (id) => document.getElementById(id);
+  const usd = (a) => '$' + Number(formatUnits(a, 6)).toFixed(6);
+  const shortHex = (h) => { const s = String(h == null ? '' : h); return s.length > 20 ? s.slice(0, 10) + '…' + s.slice(-6) : s; };
 
-function bar(el, used, cap) {
-  const pct = cap > 0n ? Math.min(100, Number(used * 100n / cap)) : 0;
-  el.querySelector('span').style.width = pct + '%';
-  if (pct >= 100) el.classList.add('over');
-}
+  const nanoAbi = [
+    { type: 'function', name: 'channelOf', stateMutability: 'view', inputs: [{ type: 'bytes32' }],
+      outputs: [{ type: 'tuple', components: [ { name: 'payer', type: 'address' }, { name: 'service', type: 'address' },
+        { name: 'deposit', type: 'uint256' }, { name: 'redeemed', type: 'uint256' }, { name: 'closeAt', type: 'uint64' },
+        { name: 'guarded', type: 'bool' }, { name: 'settled', type: 'bool' } ] }] },
+    { type: 'function', name: 'outstanding', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint256' }] } ];
+  const guardAbi = [
+    { type: 'function', name: 'remaining', stateMutability: 'view',
+      inputs: [{ type: 'address' }, { type: 'bytes32' }, { type: 'bytes32' }], outputs: [{ type: 'uint256' }] },
+    { type: 'function', name: 'capOf', stateMutability: 'view',
+      inputs: [{ type: 'address' }, { type: 'bytes32' }, { type: 'bytes32' }],
+      outputs: [{ type: 'uint256' }, { type: 'uint64' }, { type: 'bool' }] } ];
 
-async function main() {
-  $('cid').textContent = CID.slice(0,10) + '...' + CID.slice(-6);
-  const [ch, out, bn] = await Promise.all([
-    client.readContract({ address:NANO, abi:nanoAbi, functionName:'channelOf', args:[CID] }),
-    client.readContract({ address:NANO, abi:nanoAbi, functionName:'outstanding', args:[CID] }),
-    client.getBlockNumber() ]);
-  $('deposit').textContent = usd(ch.deposit);
-  $('redeemed').textContent = usd(ch.redeemed);
-  $('outstanding').textContent = usd(out);
-  $('guarded').textContent = ch.guarded ? 'yes' : 'no';
-  $('settled').textContent = ch.settled ? 'yes, closed' : 'open';
-  $('blockstat').textContent = 'read live at Arc mainnet block ' + bn.toString();
-  $('chip').textContent = 'live at block ' + bn.toString();
-
-  for (const [who, subj] of [['alice',ALICE],['bob',BOB]]) {
-    const [rem, cap] = await Promise.all([
-      client.readContract({ address:GUARD, abi:guardAbi, functionName:'remaining', args:[NANO, CID, subj] }),
-      client.readContract({ address:GUARD, abi:guardAbi, functionName:'capOf', args:[NANO, CID, subj] }) ]);
-    const limit = cap[0], used = limit > rem ? limit - rem : 0n;
-    $(who+'_use').textContent = usd(used) + ' / ' + usd(limit);
-    bar($(who+'_bar'), used, limit);
-    $(who+'_txt').textContent = who === 'bob'
-      ? 'remaining ' + usd(rem) + '. At the cap, so the next voucher is refused on-chain.'
-      : 'remaining ' + usd(rem) + ' of the per-person cap.';
+  function setBar(id, used, cap) {
+    const el = $(id); if (!el) return;
+    const pct = cap > 0n ? Math.min(100, Number(used * 100n / cap)) : 0;
+    el.querySelector('span').style.width = pct + '%';
+    if (pct >= 100) el.classList.add('full');
+  }
+  function fail(msg) {
+    const pill = $('chanPill'); if (pill) { pill.textContent = 'read failed'; pill.classList.remove('live'); }
+    const cid = $('chanId'); if (cid) cid.textContent = 'channel: could not read the chain';
+    const bs = $('blockstat'); if (bs) bs.textContent = msg;
+    console.error(msg);
   }
 
-  const rows = [['NanoChannel',NANO],['SpendGuard',GUARD],['ServiceRegistry',REG],['USDC (predeploy)',USDC]];
-  $('addrs').innerHTML = rows.map(([n,a]) =>
-    `<div class="kv"><span class="k">${n}</span><span class="v"><a href="${exp('address',a)}" target="_blank" class="mono">${a}</a></span></div>`).join('')
-    + Object.entries(TX).map(([k,h]) =>
-    `<div class="kv"><span class="k">proof: ${k}</span><span class="v"><a href="${exp('tx',h)}" target="_blank" class="mono">${h.slice(0,10)}...</a></span></div>`).join('');
-}
-main().catch(e => { $('chip').textContent = 'read failed'; $('chip').classList.remove('live'); console.error(e); });
+  async function main() {
+    const [ch, out, bn] = await Promise.all([
+      client.readContract({ address: NANO, abi: nanoAbi, functionName: 'channelOf', args: [CID] }),
+      client.readContract({ address: NANO, abi: nanoAbi, functionName: 'outstanding', args: [CID] }),
+      client.getBlockNumber() ]);
+    $('chanId').innerHTML = 'channel <span class="mono">' + shortHex(CID) + '</span> · payer <a class="tx" href="https://explorer.arc.io/address/' + ch.payer + '" target="_blank" rel="noopener">' + shortHex(ch.payer) + ' ↗</a>';
+    const pill = $('chanPill'); pill.textContent = '● live at block ' + bn.toString(); pill.classList.add('live');
+    $('v_deposit').textContent = usd(ch.deposit);
+    $('v_redeemed').textContent = usd(ch.redeemed);
+    $('v_outstanding').textContent = usd(out);
+    $('v_state').textContent = ch.settled ? 'closed' : 'open';
+    $('v_guarded').textContent = ch.guarded ? 'guarded by SpendGuard' : 'not guarded';
+    $('blockstat').textContent = 'read live at Arc mainnet block ' + bn.toString();
+
+    for (const [who, subj] of [['alice', ALICE], ['bob', BOB]]) {
+      const [rem, cap] = await Promise.all([
+        client.readContract({ address: GUARD, abi: guardAbi, functionName: 'remaining', args: [NANO, CID, subj] }),
+        client.readContract({ address: GUARD, abi: guardAbi, functionName: 'capOf', args: [NANO, CID, subj] }) ]);
+      const limit = cap[0], used = limit > rem ? limit - rem : 0n;
+      $(who + '_subj').textContent = shortHex(subj);
+      $(who + '_cap').textContent = usd(limit);
+      $(who + '_used').textContent = usd(used);
+      $(who + '_rem').textContent = usd(rem);
+      setBar(who + '_bar', used, limit);
+      $(who + '_txt').textContent = (rem === 0n)
+        ? 'At the cap. The next voucher would revert CapExceeded on-chain, so it can never be redeemed.'
+        : 'Remaining ' + usd(rem) + ' of the ' + usd(limit) + ' per-person cap.';
+    }
+  }
+  main().catch((e) => fail('Reading the Arc mainnet RPC failed: ' + (e && e.message ? e.message : String(e))));
+</script>
+
+<script>
+/* Reveal contract for the demo video kit. Opacity only, so every [data-step] box is
+   measured once at full reveal and stays put in every state. On a normal page load
+   every step is revealed, so the live page looks and behaves exactly as before. */
+(function(){
+  var steps = [].slice.call(document.querySelectorAll('[data-step]'));
+  function dimTo(list, k){ for (var i = 0; i < list.length; i++){ list[i].classList.toggle('dim', i >= k); } }
+  function stepsIn(el){ return [].slice.call(el.querySelectorAll('[data-step]')); }
+  window.setReveal = function(k, scope){
+    if (typeof k === 'string'){ var swap = k; k = scope; scope = swap; }
+    var list = steps;
+    if (scope){
+      var el = (typeof scope === 'string')
+        ? document.getElementById(String(scope).replace(/^#/, ''))
+        : scope;
+      if (el && el.querySelectorAll){ dimTo(steps, steps.length); list = stepsIn(el); }
+    }
+    var n = Number(k);
+    if (!isFinite(n)) { n = list.length; }
+    n = Math.max(0, Math.min(list.length, Math.floor(n)));
+    dimTo(list, n);
+    return n;
+  };
+  window.setReveal(steps.length);
+})();
 </script>
 </body>
 </html>
