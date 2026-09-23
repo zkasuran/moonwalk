@@ -274,7 +274,7 @@ def _result_embed(
             value=f"[{tx[:16]}...]({chain_config.tx_url(tx)})",
             inline=False,
         )
-    embed.set_footer(text="Paid per call via x402 on Arc testnet")
+    embed.set_footer(text=f"Paid per call via x402 on {chain_config.ARC_NETWORK_NAME}")
     return embed
 
 
@@ -374,13 +374,14 @@ async def _handle_premium_command(
     embed = discord.Embed(
         title=f"/{command_name} — pay {price_str} USDC",
         description=(
-            "Bot wallet insufficient. Click below to pay via MetaMask on Arc Testnet.\n"
+            f"Bot wallet insufficient. Click below to pay via MetaMask on "
+            f"{chain_config.ARC_NETWORK_NAME}.\n"
             "Result will appear here once confirmed."
         ),
         color=0xF59E0B,
     )
     embed.add_field(name="Amount", value=price_str, inline=True)
-    embed.add_field(name="Network", value="Arc Testnet", inline=True)
+    embed.add_field(name="Network", value=chain_config.ARC_NETWORK_NAME, inline=True)
     embed.set_footer(text="x402 EIP-3009 · NanoPay")
 
     view = _PayView(pay_url)
@@ -515,7 +516,7 @@ async def _handle_agent_request(interaction: discord.Interaction, prompt: str) -
                 value=f"[{tx[:16]}...]({chain_config.tx_url(tx)})",
                 inline=False,
             )
-        embed.set_footer(text="Paid per call via x402 on Arc testnet")
+        embed.set_footer(text=f"Paid per call via x402 on {chain_config.ARC_NETWORK_NAME}")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -721,7 +722,9 @@ async def cmd_channel(interaction: discord.Interaction) -> None:
             ),
             inline=False,
         )
-    embed.set_footer(text=f"Channel {str(data.get('channelId', ''))[:18]}... on Arc testnet")
+    embed.set_footer(
+        text=f"Channel {str(data.get('channelId', ''))[:18]}... on {chain_config.ARC_NETWORK_NAME}"
+    )
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -793,7 +796,7 @@ async def cmd_cap(
         value=_price_display(int(cap.get("remainingAtomic", 0))),
         inline=True,
     )
-    embed.set_footer(text="SpendGuard on Arc testnet")
+    embed.set_footer(text=f"SpendGuard on {chain_config.ARC_NETWORK_NAME}")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -957,7 +960,11 @@ async def cmd_info(interaction: discord.Interaction) -> None:
         ),
         color=0x7C3AED,
     )
-    embed.add_field(name="Network", value="Arc testnet (eip155:5042002)", inline=False)
+    embed.add_field(
+        name="Network",
+        value=f"{chain_config.ARC_NETWORK_NAME} ({chain_config.ARC_NETWORK})",
+        inline=False,
+    )
     embed.add_field(
         name="Your limit",
         value=(

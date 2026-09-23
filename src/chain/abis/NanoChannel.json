@@ -35,6 +35,45 @@
   },
   {
     "type": "function",
+    "name": "MAX_BATCH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_CHALLENGE_WINDOW",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "OPEN_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "VOUCHER_TYPEHASH",
     "inputs": [],
     "outputs": [
@@ -248,6 +287,16 @@
         "internalType": "address"
       },
       {
+        "name": "capLimit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "capWindow",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
         "name": "auth",
         "type": "tuple",
         "internalType": "struct NanoChannel.Authorization",
@@ -283,6 +332,11 @@
             "internalType": "bytes"
           }
         ]
+      },
+      {
+        "name": "openSignature",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -293,6 +347,60 @@
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "openHash",
+    "inputs": [
+      {
+        "name": "service",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "guarded",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "capOwner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "deposit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "capLimit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "capWindow",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "authNonce",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -721,6 +829,11 @@
   },
   {
     "type": "error",
+    "name": "BadWindow",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChallengeOpen",
     "inputs": [
       {
@@ -816,6 +929,11 @@
   {
     "type": "error",
     "name": "WrongPayer",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
     "inputs": []
   },
   {

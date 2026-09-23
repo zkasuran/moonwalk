@@ -18,13 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from eth_utils.crypto import keccak  # noqa: E402
 
-from src.chain import ArcClient, ChannelClient, GuardClient  # noqa: E402
+from src.chain import ArcClient, ChannelClient  # noqa: E402
 from src.chain import config as chain_config  # noqa: E402
 from src.payments import config as pay_config  # noqa: E402
 
 
 def main() -> int:
-    deposit_usdc = float(sys.argv[1]) if len(sys.argv) > 1 else 0.50
+    deposit_usdc = float(sys.argv[1]) if len(sys.argv) > 1 else 0.10
     deposit = int(round(deposit_usdc * 1_000_000))
 
     agent_key = os.getenv("AGENT_PRIVATE_KEY", "")
@@ -36,7 +36,6 @@ def main() -> int:
     client = ArcClient()
     client.assert_arc()
     chain = ChannelClient(client)
-    guard = GuardClient(client)
     payer = ArcClient.account(agent_key)
     service = ArcClient.account(service_key)
     service_address = pay_config.SELLER_WALLET_ADDRESS or service.address
@@ -69,21 +68,22 @@ def main() -> int:
         return 1
 
     print(f"\nopening with {deposit / 1e6:.6f} USDC")
+    cap = pay_config.CHANNEL_DEFAULT_CAP_ATOMIC
+    window = pay_config.CHANNEL_CAP_WINDOW_SECONDS
     auth = chain.sign_deposit(payer, deposit)
     _, sent = chain.open(
         service,
+        payer,
         service_address,
         salt,
         guarded=True,
         auth=auth,
+        cap_limit=cap,
+        cap_window=window,
         cap_owner=service.address,
     )
     print(f"  open      {sent.url} (status {sent.status}, gas {sent.gas_used})")
-
-    cap = pay_config.CHANNEL_DEFAULT_CAP_ATOMIC
-    window = pay_config.CHANNEL_CAP_WINDOW_SECONDS
-    capped = guard.set_default_cap(service, channel_id, cap, window)
-    print(f"  cap       {cap / 1e6:.6f} USDC per {window}s per person: {capped.url}")
+    print(f"  cap       {cap / 1e6:.6f} USDC per {window}s per person, set in the signed open")
 
     print("\nready. The service can now meter calls off-chain and redeem in batches.")
     print(f"  explorer  {chain_config.address_url(chain_config.NANO_CHANNEL_ADDRESS)}")

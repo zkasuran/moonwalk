@@ -1,0 +1,33 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "rpc": "https://rpc.mainnet.arc.io",
+  "explorer": "https://explorer.arc.io",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "deployer": "0xdb6c6340342e71a63cd11ebac2185204b7777777",
+  "deployedAt": null,
+  "compiler": {
+    "solc": "0.8.24",
+    "evmVersion": "cancun",
+    "optimizer": true,
+    "runs": 200
+  },
+  "note": "Addresses are the deterministic CREATE targets from deployer nonce 0/1/2. txHash and deployedAt are filled at broadcast.",
+  "contracts": [
+    {
+      "name": "SpendGuard",
+      "address": "0xd75f7786D0DD42c8F161Bd78E87D37001044Fc32",
+      "txHash": "pending"
+    },
+    {
+      "name": "NanoChannel",
+      "address": "0xAbB85ab157357676eBE7ae17A161168912A3c232",
+      "txHash": "pending"
+    },
+    {
+      "name": "ServiceRegistry",
+      "address": "0x059D3A87E91fA91D341f364868A9Ed333077989a",
+      "txHash": "pending"
+    }
+  ]
+}

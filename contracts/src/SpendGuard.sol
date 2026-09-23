@@ -49,14 +49,22 @@ contract SpendGuard {
     error NotConfigured(address app, bytes32 scope, bytes32 subject);
     error CapExceeded(bytes32 subject, uint256 used, uint256 amount, uint256 limit);
 
-    /// @notice Claim a scope for `owner`. Called by the payer contract, once per
-    ///         scope, so scope ownership is authoritative instead of first come.
-    function registerScope(bytes32 scope, address owner) external {
+    /// @notice Claim a scope for `owner` and set its opening default cap in the
+    ///         same call. Called by the payer contract, once per scope, so scope
+    ///         ownership is authoritative instead of first come.
+    /// @dev Writing the default cap here is what lets a guarded channel work for a
+    ///      payer that never sends a transaction. The cap the payer signed at open
+    ///      is in force immediately, so a funded channel is never stranded on
+    ///      NotConfigured waiting for a cap nobody can set. A `defaultLimit` of 0
+    ///      is a deliberate block-all the owner can refine with setSubjectCap.
+    function registerScope(bytes32 scope, address owner, uint256 defaultLimit, uint64 defaultWindow) external {
         if (owner == address(0)) revert ZeroOwner();
         bytes32 key = _key(msg.sender, scope);
         if (_scopeOwner[key] != address(0)) revert ScopeTaken();
         _scopeOwner[key] = owner;
         emit ScopeRegistered(msg.sender, scope, owner);
+        _defaultCap[key] = Cap({limit: defaultLimit, window: defaultWindow, set: true});
+        emit DefaultCapSet(msg.sender, scope, defaultLimit, defaultWindow);
     }
 
     /// @notice Cap that applies to any subject without its own cap.

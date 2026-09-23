@@ -69,10 +69,41 @@ contract NanoChannelTest is Test {
         a.signature = abi.encodePacked(r, s, v);
     }
 
+    /// Sign the Open struct with `key`, binding every channel parameter into one
+    /// signature the way the payer does off-chain.
+    function _signOpen(
+        uint256 key,
+        bytes32 salt,
+        bool guarded,
+        address capOwner,
+        uint256 deposit,
+        uint256 capLimit,
+        uint64 capWindow,
+        bytes32 authNonce
+    ) internal view returns (bytes memory) {
+        bytes32 digest = channel.openHash(service, salt, guarded, capOwner, deposit, capLimit, capWindow, authNonce);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// Open with the full parameter set, both the EIP-3009 and the Open signature
+    /// built from PAYER_KEY.
+    function _openFull(
+        bytes32 salt,
+        bool guarded,
+        address capOwner,
+        uint256 capLimit,
+        uint64 capWindow,
+        uint256 deposit,
+        bytes32 nonce
+    ) internal returns (bytes32 id) {
+        NanoChannel.Authorization memory auth = _auth(PAYER_KEY, deposit, nonce);
+        bytes memory openSig = _signOpen(PAYER_KEY, salt, guarded, capOwner, deposit, capLimit, capWindow, auth.nonce);
+        id = channel.open(service, salt, guarded, capOwner, capLimit, capWindow, auth, openSig);
+    }
+
     function _open(uint256 deposit, bool guarded) internal returns (bytes32 id) {
-        id = channel.open(
-            service, SALT, guarded, address(0), _auth(PAYER_KEY, deposit, keccak256("open"))
-        );
+        id = _openFull(SALT, guarded, address(0), 0, 0, deposit, keccak256("open"));
     }
 
     function _voucher(bytes32 id, bytes32 subject, uint256 cumulative)
@@ -148,28 +179,59 @@ contract NanoChannelTest is Test {
     function test_OpenRejectsDuplicateChannel() public {
         _open(1_000_000, false);
         NanoChannel.Authorization memory a = _auth(PAYER_KEY, 1_000_000, keccak256("open2"));
+        bytes memory openSig = _signOpen(PAYER_KEY, SALT, false, address(0), a.value, 0, 0, a.nonce);
         vm.expectRevert(NanoChannel.ChannelExists.selector);
-        channel.open(service, SALT, false, address(0), a);
+        channel.open(service, SALT, false, address(0), 0, 0, a, openSig);
     }
 
     function test_OpenRejectsZeroService() public {
         NanoChannel.Authorization memory a = _auth(PAYER_KEY, 1_000_000, keccak256("z"));
+        // service == 0 is rejected before the Open signature is even recovered.
         vm.expectRevert(NanoChannel.ZeroService.selector);
-        channel.open(address(0), SALT, false, address(0), a);
+        channel.open(address(0), SALT, false, address(0), 0, 0, a, "");
     }
 
     function test_OpenRejectsZeroDeposit() public {
         NanoChannel.Authorization memory a = _auth(PAYER_KEY, 0, keccak256("z"));
         vm.expectRevert(NanoChannel.ZeroDeposit.selector);
-        channel.open(service, SALT, false, address(0), a);
+        channel.open(service, SALT, false, address(0), 0, 0, a, "");
+    }
+
+    /// A submitter cannot open the payer's channel with parameters the payer never
+    /// signed. Flipping guarded off, or pointing capOwner at the submitter, breaks
+    /// the Open signature and the whole open reverts.
+    function test_OpenRejectsParametersThePayerDidNotSign() public {
+        NanoChannel.Authorization memory a = _auth(PAYER_KEY, 1_000_000, keccak256("open"));
+        // The payer signed a guarded channel owned by itself.
+        bytes memory honestSig = _signOpen(PAYER_KEY, SALT, true, address(0), a.value, 5_000, 0, a.nonce);
+
+        // A submitter tries to open it unguarded, reusing that signature.
+        vm.prank(service);
+        vm.expectRevert(NanoChannel.BadSignature.selector);
+        channel.open(service, SALT, false, address(0), 5_000, 0, a, honestSig);
+
+        // Or tries to seize cap control by naming itself capOwner.
+        vm.prank(service);
+        vm.expectRevert(NanoChannel.BadSignature.selector);
+        channel.open(service, SALT, true, service, 5_000, 0, a, honestSig);
+
+        // Or tries to widen the opening cap past what the payer agreed.
+        vm.prank(service);
+        vm.expectRevert(NanoChannel.BadSignature.selector);
+        channel.open(service, SALT, true, address(0), 5_000_000, 0, a, honestSig);
+
+        // The honest parameters still open cleanly.
+        bytes32 id = channel.open(service, SALT, true, address(0), 5_000, 0, a, honestSig);
+        assertEq(channel.channelOf(id).guarded, true);
+        assertEq(guard.scopeOwner(address(channel), id), payer);
     }
 
     /// A payer that never sends a transaction cannot set its own caps, so an ops
     /// wallet can hold that job. It can only restrict spend, never authorize it.
     function test_CapOwnerCanBeDelegatedAwayFromThePayer() public {
-        bytes32 id = channel.open(
-            service, SALT, true, stranger, _auth(PAYER_KEY, 100_000, keccak256("open"))
-        );
+        // Payer signs a block-all opening cap and delegates cap control to the
+        // stranger, who then opens a real cap.
+        bytes32 id = _openFull(SALT, true, stranger, 0, 0, 100_000, keccak256("open"));
         assertEq(guard.scopeOwner(address(channel), id), stranger);
 
         vm.prank(payer);
@@ -323,12 +385,30 @@ contract NanoChannelTest is Test {
         channel.redeem(id, vs, sigs);
     }
 
-    function test_GuardedChannelFailsClosedWhenNoCapIsConfigured() public {
-        bytes32 id = _open(1_000_000, true);
+    /// The payer's Open signature carries the opening cap, so a guarded channel is
+    /// redeemable up to that cap the moment it opens, with no cap-setting
+    /// transaction from anyone. This is the fix for the payer-never-transacts flow.
+    function test_GuardedChannelIsRedeemableUpToTheSignedCapWithNoSetup() public {
+        bytes32 id = _openFull(SALT, true, address(0), 5_000, 0, 1_000_000, keccak256("open"));
+        // No setDefaultCap call. The signed cap is already in force.
+        (uint256 limit,, bool set) = guard.capOf(address(channel), id, ALICE);
+        assertEq(limit, 5_000);
+        assertTrue(set, "the opening cap is configured at open");
+
+        assertEq(_redeem(id, ALICE, 5_000), 5_000, "up to the signed cap is fine");
+        (NanoChannel.Voucher[] memory vs, bytes[] memory sigs) = _batch(id, ALICE, 5_001, PAYER_KEY);
+        vm.expectRevert(abi.encodeWithSelector(SpendGuard.CapExceeded.selector, ALICE, 5_000, 1, 5_000));
+        channel.redeem(id, vs, sigs);
+    }
+
+    /// A signed capLimit of 0 is a deliberate block-all: the scope is configured
+    /// (never NotConfigured) but nothing redeems until the cap owner refines it.
+    function test_GuardedChannelWithZeroCapIsConfiguredButBlocksSpend() public {
+        bytes32 id = _open(1_000_000, true); // opens with capLimit 0
+        (,, bool set) = guard.capOf(address(channel), id, ALICE);
+        assertTrue(set, "a zero cap is a decision, not an absence");
         (NanoChannel.Voucher[] memory vs, bytes[] memory sigs) = _batch(id, ALICE, 1, PAYER_KEY);
-        vm.expectRevert(
-            abi.encodeWithSelector(SpendGuard.NotConfigured.selector, address(channel), id, ALICE)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SpendGuard.CapExceeded.selector, ALICE, 0, 1, 0));
         channel.redeem(id, vs, sigs);
     }
 
@@ -485,6 +565,53 @@ contract NanoChannelTest is Test {
         );
         bytes32 expected = keccak256(abi.encodePacked("\x19\x01", channel.domainSeparator(), structHash));
         assertEq(channel.voucherHash(v), expected);
+    }
+
+    // ---- deploy + limit guards --------------------------------------------
+
+    function test_ConstructorRejectsAShortChallengeWindow() public {
+        vm.expectRevert(NanoChannel.BadWindow.selector);
+        new NanoChannel(IUSDC(address(usdc)), guard, uint64(1 hours) - 1);
+    }
+
+    function test_ConstructorAcceptsExactlyTheMinimumWindow() public {
+        NanoChannel c = new NanoChannel(IUSDC(address(usdc)), guard, channel.MIN_CHALLENGE_WINDOW());
+        assertEq(c.challengeWindow(), 1 hours);
+    }
+
+    function test_ConstructorRejectsAZeroUsdc() public {
+        vm.expectRevert(NanoChannel.ZeroAddress.selector);
+        new NanoChannel(IUSDC(address(0)), guard, CHALLENGE);
+    }
+
+    function test_ConstructorRejectsAZeroGuard() public {
+        vm.expectRevert(NanoChannel.ZeroAddress.selector);
+        new NanoChannel(IUSDC(address(usdc)), SpendGuard(address(0)), CHALLENGE);
+    }
+
+    function test_RedeemRejectsABatchOverTheMax() public {
+        bytes32 id = _open(1_000_000, false);
+        uint256 n = channel.MAX_BATCH() + 1;
+        NanoChannel.Voucher[] memory vs = new NanoChannel.Voucher[](n);
+        bytes[] memory sigs = new bytes[](n);
+        // The size check fires before any voucher is read, so the contents do not
+        // matter here.
+        vm.expectRevert(NanoChannel.BadBatch.selector);
+        channel.redeem(id, vs, sigs);
+    }
+
+    function test_RedeemAcceptsExactlyTheMaxBatch() public {
+        bytes32 id = _open(1_000_000, false);
+        uint256 n = channel.MAX_BATCH();
+        NanoChannel.Voucher[] memory vs = new NanoChannel.Voucher[](n);
+        bytes[] memory sigs = new bytes[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            // A distinct subject per voucher, each a fresh cumulative of 1.
+            NanoChannel.Voucher memory v = _voucher(id, keccak256(abi.encode("s", i)), 1);
+            vs[i] = v;
+            sigs[i] = _sign(PAYER_KEY, v);
+        }
+        assertEq(channel.redeem(id, vs, sigs), n, "a full 256-voucher batch settles");
     }
 
     // ---- fuzz -------------------------------------------------------------

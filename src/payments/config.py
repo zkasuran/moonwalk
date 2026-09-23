@@ -23,15 +23,19 @@ from dotenv import load_dotenv
 # the agent's reasoning to a different endpoint than the one configured here.
 load_dotenv(override=True)
 
-# Arc testnet
+# Arc network. Chain id is env-driven (like src/chain/config.py) so a mainnet
+# deployment sets ARC_CHAIN_ID=5042 without a code change; the default keeps a
+# fresh clone on testnet.
 ARC_NETWORK = os.getenv("ARC_NETWORK", "eip155:5042002")
-ARC_CHAIN_ID = 5042002
+ARC_CHAIN_ID = int(os.getenv("ARC_CHAIN_ID", "5042002"))
 ARC_RPC_URL = os.getenv("ARC_RPC_URL", "https://rpc.testnet.arc.network")
 
-# Arc USDC contract (verified on-chain: name()="USDC", version()="2", decimals=6)
-ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
-ARC_USDC_NAME = "USDC"
-ARC_USDC_VERSION = "2"
+# Arc USDC contract. The values are the same on testnet and mainnet (the predeploy
+# lives at the same address, name "USDC", version "2", decimals 6), but env-driven
+# so a different deploy can override them without editing the source.
+ARC_USDC_ADDRESS = os.getenv("ARC_USDC_ADDRESS", "0x3600000000000000000000000000000000000000")
+ARC_USDC_NAME = os.getenv("ARC_USDC_NAME", "USDC")
+ARC_USDC_VERSION = os.getenv("ARC_USDC_VERSION", "2")
 
 # Legacy single-wallet key (deployer). Kept for backward compatibility / fallback.
 DEPLOYER_PRIVATE_KEY = os.getenv("DEPLOYER_PRIVATE_KEY", "")

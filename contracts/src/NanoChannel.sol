@@ -56,6 +56,13 @@ contract NanoChannel {
     bytes32 public constant VOUCHER_TYPEHASH =
         keccak256("Voucher(bytes32 channelId,bytes32 subject,uint256 cumulative,uint64 validBefore)");
     bytes32 public constant CLOSE_TYPEHASH = keccak256("Close(bytes32 channelId,uint256 redeemed)");
+    /// @dev The payer signs the full open parameters, not just the EIP-3009
+    ///      authorization, so the account that submits the open cannot flip
+    ///      `guarded` off or point `capOwner` at itself. Every field the payer
+    ///      cares about is bound into this one signature.
+    bytes32 public constant OPEN_TYPEHASH = keccak256(
+        "Open(address service,bytes32 salt,bool guarded,address capOwner,uint256 deposit,uint256 capLimit,uint64 capWindow,bytes32 authNonce)"
+    );
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _NAME_HASH = keccak256("MoonWalk NanoChannel");
@@ -64,6 +71,15 @@ contract NanoChannel {
     ///      a valid one, so it is rejected outright.
     uint256 private constant _HALF_ORDER =
         0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
+
+    /// @notice A challenge window shorter than this is rejected at deploy. Arc
+    ///         shares a timestamp across sub-second blocks, so a zero window would
+    ///         let the payer withdraw in the same second it requests a close and
+    ///         front-run a pending redeem.
+    uint64 public constant MIN_CHALLENGE_WINDOW = 1 hours;
+    /// @notice Upper bound on vouchers per redeem. A cold guarded subject costs
+    ///         ~85k gas, so this batch stays well under the 30M block limit.
+    uint256 public constant MAX_BATCH = 256;
 
     IUSDC public immutable usdc;
     SpendGuard public immutable guard;
@@ -92,6 +108,8 @@ contract NanoChannel {
     error NotPayer();
     error ZeroService();
     error ZeroDeposit();
+    error ZeroAddress();
+    error BadWindow();
     error WrongPayer();
     error BadBatch();
     error WrongChannel();
@@ -105,6 +123,8 @@ contract NanoChannel {
     error NotClosing();
 
     constructor(IUSDC usdc_, SpendGuard guard_, uint64 challengeWindow_) {
+        if (address(usdc_) == address(0) || address(guard_) == address(0)) revert ZeroAddress();
+        if (challengeWindow_ < MIN_CHALLENGE_WINDOW) revert BadWindow();
         usdc = usdc_;
         guard = guard_;
         challengeWindow = challengeWindow_;
@@ -115,23 +135,39 @@ contract NanoChannel {
     // ---- open and fund ----------------------------------------------------
 
     /// @notice Open a channel and fund it with a signed USDC authorization.
-    /// @dev Anyone may submit this. The payer's EIP-3009 signature is what moves
-    ///      the money, so the payer needs no gas and no prior approve. `guarded`
-    ///      binds every future redeem to SpendGuard caps for this channel.
+    /// @dev Anyone may submit this. The payer signs two things: the EIP-3009
+    ///      authorization that moves the money, and the Open struct that binds
+    ///      every channel parameter (`guarded`, `capOwner`, the opening cap) into
+    ///      one signature. Without the second signature the submitter could open
+    ///      the payer's channel with `guarded=false` and disable every cap, so the
+    ///      Open signature is what makes SpendGuard's promise hold.
     /// @param capOwner Who administers this channel's caps. Pass the zero address
     ///        to make it the payer. A separate cap owner exists because a payer
     ///        that never sends a transaction cannot configure anything on-chain,
     ///        and delegating is safe: caps only ever restrict what may be
     ///        redeemed, and spending still needs the payer's own signature.
+    /// @param capLimit The opening default cap for a guarded channel, applied to
+    ///        every subject without its own cap. Signed by the payer, so a guarded
+    ///        channel is usable the moment it opens with no follow-up transaction.
+    ///        A signed 0 is a deliberate block-all the capOwner can refine later.
+    /// @param capWindow The window in seconds for that cap, 0 for a lifetime total.
+    /// @param openSignature The payer's signature over openHash(...).
     function open(
         address service,
         bytes32 salt,
         bool guarded,
         address capOwner,
-        Authorization calldata auth
+        uint256 capLimit,
+        uint64 capWindow,
+        Authorization calldata auth,
+        bytes calldata openSignature
     ) external returns (bytes32 channelId) {
         if (service == address(0)) revert ZeroService();
         if (auth.value == 0) revert ZeroDeposit();
+
+        bytes32 openDigest = openHash(service, salt, guarded, capOwner, auth.value, capLimit, capWindow, auth.nonce);
+        if (_recover(openDigest, openSignature) != auth.from) revert BadSignature();
+
         channelId = channelIdOf(auth.from, service, salt);
         Channel storage ch = _channels[channelId];
         if (ch.payer != address(0)) revert ChannelExists();
@@ -141,7 +177,9 @@ contract NanoChannel {
         ch.deposit = auth.value;
         ch.guarded = guarded;
 
-        if (guarded) guard.registerScope(channelId, capOwner == address(0) ? auth.from : capOwner);
+        if (guarded) {
+            guard.registerScope(channelId, capOwner == address(0) ? auth.from : capOwner, capLimit, capWindow);
+        }
         _pull(auth);
 
         emit ChannelOpened(channelId, auth.from, service, auth.value, guarded);
@@ -188,7 +226,7 @@ contract NanoChannel {
         if (ch.payer == address(0)) revert UnknownChannel();
         if (ch.settled) revert ChannelSettled();
         uint256 n = vouchers.length;
-        if (n == 0 || n != signatures.length) revert BadBatch();
+        if (n == 0 || n > MAX_BATCH || n != signatures.length) revert BadBatch();
 
         for (uint256 i = 0; i < n; ++i) {
             Voucher calldata v = vouchers[i];
@@ -299,6 +337,29 @@ contract NanoChannel {
     /// @notice The EIP-712 digest a service signs to agree an immediate close.
     function closeHash(bytes32 channelId, uint256 redeemed) public view returns (bytes32) {
         return _digest(keccak256(abi.encode(CLOSE_TYPEHASH, channelId, redeemed)));
+    }
+
+    /// @notice The EIP-712 digest a payer signs to open a channel.
+    /// @dev Exposed so the off-chain signer can assert byte-for-byte agreement
+    ///      with the contract instead of trusting two implementations to match,
+    ///      the same way voucherHash is exposed. `deposit` is the authorization
+    ///      value and `authNonce` is the authorization nonce, so the Open
+    ///      signature is pinned to the exact deposit that funds the channel.
+    function openHash(
+        address service,
+        bytes32 salt,
+        bool guarded,
+        address capOwner,
+        uint256 deposit,
+        uint256 capLimit,
+        uint64 capWindow,
+        bytes32 authNonce
+    ) public view returns (bytes32) {
+        return _digest(
+            keccak256(
+                abi.encode(OPEN_TYPEHASH, service, salt, guarded, capOwner, deposit, capLimit, capWindow, authNonce)
+            )
+        );
     }
 
     function domainSeparator() public view returns (bytes32) {

@@ -42,8 +42,11 @@ from web3.types import TxParams, Wei
 
 from src.chain.client import ArcClient
 
-# Same address on every testnet. Verified with `cast code` on Arc, Base Sepolia
-# and Ethereum Sepolia: identical bytecode length on all three.
+# CCTP V2 testnet contracts. One address per contract across every testnet, so
+# Arc, Base Sepolia and Ethereum Sepolia share them. Verified with `cast code` on
+# all three: identical bytecode length. Mainnet uses different addresses, carried
+# per chain on ChainConfig below rather than as a module constant, because they
+# are not shared. These stay the default for the testnet configs.
 TOKEN_MESSENGER_V2 = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA"
 MESSAGE_TRANSMITTER_V2 = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
 TOKEN_MINTER_V2 = "0xb43db544E2c27092c107639Ad201b3dEfAbcF192"
@@ -89,6 +92,14 @@ class ChainConfig:
     # submitter needs the chain's own gas token, which is the practical blocker on
     # a testnet where the USDC faucet hands out no ETH.
     gas_token: str
+    # CCTP V2 contracts for this chain. Testnets share one address per contract, so
+    # these default to the shared testnet deployment; a mainnet chain overrides
+    # them with its own verified addresses.
+    token_messenger: str = TOKEN_MESSENGER_V2
+    message_transmitter: str = MESSAGE_TRANSMITTER_V2
+    token_minter: str = TOKEN_MINTER_V2
+    # A mainnet chain routes through Circle's production Iris host, not the sandbox.
+    mainnet: bool = False
 
     def tx_url(self, tx_hash: str) -> str:
         h = tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}"
@@ -107,6 +118,25 @@ CHAINS: dict[str, ChainConfig] = {
         usdc="0x3600000000000000000000000000000000000000",
         explorer="https://testnet.arcscan.app",
         gas_token="USDC",
+    ),
+    "arc-mainnet": ChainConfig(
+        key="arc-mainnet",
+        name="Arc",
+        domain=26,
+        chain_id=5042,
+        rpc_url=os.getenv("ARC_MAINNET_RPC_URL", "https://rpc.mainnet.arc.io"),
+        usdc="0x3600000000000000000000000000000000000000",
+        explorer="https://explorer.arc.io",
+        gas_token="USDC",
+        # Verified on Arc mainnet (chain 5042) with `cast code` on 2026-09-23.
+        # TokenMessengerV2 and MessageTransmitterV2 carry bytecode, and the
+        # transmitter's localDomain() returns 26. TokenMinterV2 was read from
+        # TokenMessengerV2.localMinter() and confirmed with `cast code` (18.5k
+        # bytes), so the mint-route check has a real address to query.
+        token_messenger="0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        message_transmitter="0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+        token_minter="0xfd78EE919681417d192449715b2594ab58f5D002",
+        mainnet=True,
     ),
     "eth-sepolia": ChainConfig(
         key="eth-sepolia",
@@ -420,13 +450,13 @@ class Web3ChainReader:
     def local_domain(self) -> int:
         """MessageTransmitterV2's own view of which domain this chain is. Reading it
         is how a wrong RPC url is caught before anything is burned."""
-        return int(str(self._call(MESSAGE_TRANSMITTER_V2, LOCAL_DOMAIN, out="uint32")))
+        return int(str(self._call(self.config.message_transmitter, LOCAL_DOMAIN, out="uint32")))
 
     def local_token(self, remote_domain: int, remote_token: str) -> str:
         """What TokenMinterV2 will mint here for a token burned on `remote_domain`.
         A zero address means the route does not exist and the mint would fail."""
         value = self._call(
-            TOKEN_MINTER_V2,
+            self.config.token_minter,
             GET_LOCAL_TOKEN,
             remote_domain,
             address_to_bytes32(remote_token),
@@ -555,9 +585,9 @@ def build_approve(config: ChainConfig, amount: int) -> BuiltCall:
         label="approve",
         chain_key=config.key,
         to=Web3.to_checksum_address(config.usdc),
-        data=encode_call(APPROVE, Web3.to_checksum_address(TOKEN_MESSENGER_V2), amount),
+        data=encode_call(APPROVE, Web3.to_checksum_address(config.token_messenger), amount),
         function=APPROVE,
-        args={"spender": TOKEN_MESSENGER_V2, "amount": str(amount)},
+        args={"spender": config.token_messenger, "amount": str(amount)},
     )
 
 
@@ -577,7 +607,7 @@ def build_deposit_for_burn(
     return BuiltCall(
         label="depositForBurn",
         chain_key=source.key,
-        to=Web3.to_checksum_address(TOKEN_MESSENGER_V2),
+        to=Web3.to_checksum_address(source.token_messenger),
         data=encode_call(
             DEPOSIT_FOR_BURN,
             amount,
@@ -606,7 +636,7 @@ def build_receive_message(destination: ChainConfig, *, message: str, attestation
     return BuiltCall(
         label="receiveMessage",
         chain_key=destination.key,
-        to=Web3.to_checksum_address(MESSAGE_TRANSMITTER_V2),
+        to=Web3.to_checksum_address(destination.message_transmitter),
         data=encode_call(
             RECEIVE_MESSAGE,
             bytes.fromhex(message.removeprefix("0x")),
@@ -673,16 +703,18 @@ def send_call(
     )
 
 
-def message_sent_from_receipt(client: ArcClient, tx_hash: str) -> str | None:
+def message_sent_from_receipt(client: ArcClient, tx_hash: str, transmitter: str) -> str | None:
     """The `message` MessageTransmitterV2 logged for our burn.
 
     Compared against what Iris returns, this is the check that the attestation
     belongs to this transaction and not to some other burn in the same block.
+    `transmitter` is the source chain's MessageTransmitterV2, which is where the
+    burn's MessageSent event is emitted.
     """
     receipt = client.w3.eth.get_transaction_receipt(HexStr(tx_hash))
-    transmitter = Web3.to_checksum_address(MESSAGE_TRANSMITTER_V2)
+    transmitter_address = Web3.to_checksum_address(transmitter)
     for log in receipt["logs"]:
-        if Web3.to_checksum_address(log["address"]) != transmitter:
+        if Web3.to_checksum_address(log["address"]) != transmitter_address:
             continue
         topics = log["topics"]
         if not topics or "0x" + bytes(topics[0]).hex() != MESSAGE_SENT_TOPIC:
@@ -795,7 +827,12 @@ class CctpBridge:
             raise ValueError("source and destination must be different chains")
         self.source = source
         self.destination = destination
-        self.iris = iris or IrisClient()
+        # A route that touches a mainnet chain attests through Circle's production
+        # Iris host; a testnet route stays on the sandbox. An explicit client wins.
+        default_iris = (
+            IRIS_MAINNET_URL if (source.mainnet or destination.mainnet) else IRIS_SANDBOX_URL
+        )
+        self.iris = iris or IrisClient(default_iris)
         self.source_reader = source_reader or Web3ChainReader(source)
         self.destination_reader = destination_reader or Web3ChainReader(destination)
 
@@ -837,7 +874,7 @@ class CctpBridge:
         deficit = max(0, threshold - destination_balance)
         move = max(0, amount if amount is not None else deficit)
         source_balance = self.source_reader.usdc_balance(who)
-        allowance = self.source_reader.allowance(who, TOKEN_MESSENGER_V2)
+        allowance = self.source_reader.allowance(who, self.source.token_messenger)
         option = self.iris.fee_for(self.source.domain, self.destination.domain, finality)
         fee = option.fee_for(move)
         if max_fee is not None:
@@ -952,7 +989,9 @@ class CctpBridge:
             if not sent.ok:
                 raise RuntimeError(f"{call.label} reverted: {sent.tx_hash}")
         burn = next(call for call in run.calls if call.label == "depositForBurn")
-        logged = message_sent_from_receipt(source_client, burn.tx_hash)
+        logged = message_sent_from_receipt(
+            source_client, burn.tx_hash, self.source.message_transmitter
+        )
         say(f"burn {burn.tx_hash}, waiting for the Iris attestation")
         attestation = self.iris.wait_for_attestation(
             self.source.domain,

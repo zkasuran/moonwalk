@@ -91,7 +91,15 @@ def main() -> int:
     step(1, f"payer signs a {usd(DEPOSIT)} deposit, the service submits it")
     auth = channel.sign_deposit(payer, DEPOSIT)
     channel_id, opened = channel.open(
-        service, service.address, salt, guarded=True, auth=auth, cap_owner=service.address
+        service,
+        payer,
+        service.address,
+        salt,
+        guarded=True,
+        auth=auth,
+        cap_limit=DEFAULT_CAP,
+        cap_window=0,
+        cap_owner=service.address,
     )
     print(f"    channel   0x{channel_id.hex()}")
     print(f"    tx        {opened.url}  (gas {opened.gas_used}, status {opened.status})")
@@ -100,26 +108,27 @@ def main() -> int:
     assert state.deposit == DEPOSIT, "deposit mismatch"
     assert state.guarded, "channel should be guarded"
     assert guard.scope_owner(channel_id).lower() == service.address.lower()
+    # The signed Open struct carried the opening default cap, so it is live already,
+    # no separate transaction. Anyone without their own cap gets it.
+    assert guard.remaining(channel_id, bob) == DEFAULT_CAP, "open should set the default cap"
     print(f"    on-chain  deposit {usd(state.deposit)}, guarded {state.guarded}")
+    print(f"    default cap {usd(DEFAULT_CAP)} set atomically in the signed open")
     record(
         "open",
         channelId="0x" + channel_id.hex(),
         depositAtomic=DEPOSIT,
+        defaultCapAtomic=DEFAULT_CAP,
         txHash=opened.tx_hash,
         block=opened.block_number,
         gasUsed=opened.gas_used,
     )
 
-    step(2, "ops wallet sets the per-person caps on-chain")
-    t = guard.set_default_cap(service, channel_id, DEFAULT_CAP, 0)
-    print(f"    default {usd(DEFAULT_CAP)} for anyone   {t.url}")
+    step(2, "ops wallet sets alice's per-person cap on-chain")
     t2 = guard.set_subject_cap(service, channel_id, alice, ALICE_CAP, 0)
     print(f"    alice   {usd(ALICE_CAP)}                {t2.url}")
     assert guard.remaining(channel_id, alice) == ALICE_CAP
     assert guard.remaining(channel_id, bob) == DEFAULT_CAP
-    record(
-        "caps", defaultAtomic=DEFAULT_CAP, aliceAtomic=ALICE_CAP, txHashes=[t.tx_hash, t2.tx_hash]
-    )
+    record("caps", defaultAtomic=DEFAULT_CAP, aliceAtomic=ALICE_CAP, txHashes=[t2.tx_hash])
 
     step(3, f"{ALICE_CALLS + BOB_CALLS} metered calls, one signed voucher each, zero gas")
     signed: dict[str, tuple[Any, bytes]] = {}
@@ -217,7 +226,7 @@ def main() -> int:
     print(f"  service USDC     {usd(service_start)} -> {usd(service_end)}")
     print(f"  payer tx count   {payer_nonce_start} -> {payer_nonce_end}")
     print(f"  calls settled    {ALICE_CALLS + BOB_CALLS} for {usd(expected_total)}")
-    print("  on-chain txs     3 for the channel (open, redeem, close) plus 2 one-off cap settings")
+    print("  on-chain txs     3 for the channel (open, redeem, close) plus 1 one-off cap setting")
     assert payer_nonce_end == payer_nonce_start, "the payer must never send a transaction"
     assert payer_start - payer_end == expected_total, "payer paid exactly what was metered"
 
@@ -230,7 +239,7 @@ def main() -> int:
         "payerTxCountEnd": payer_nonce_end,
         "callsSettled": ALICE_CALLS + BOB_CALLS,
         "settledAtomic": expected_total,
-        "onchainTransactions": {"channelLifecycle": 3, "oneOffCapSettings": 2},
+        "onchainTransactions": {"channelLifecycle": 3, "oneOffCapSettings": 1},
         "contracts": {
             "nanoChannel": chain_config.NANO_CHANNEL_ADDRESS,
             "spendGuard": chain_config.SPEND_GUARD_ADDRESS,

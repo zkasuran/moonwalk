@@ -4,18 +4,22 @@ out = "out"
 test = "test"
 libs = ["lib"]
 solc = "0.8.24"
-# Arc is EVM compatible but documents a set of differences from mainnet, and it
-# does not publish an EVM target. "paris" compiles without PUSH0, MCOPY or
-# transient storage, so the same bytecode runs on Arc testnet and on a plain
-# local EVM. Gas on Arc is USDC and cheap, so the small size cost is worth the
-# portability.
-evm_version = "paris"
+# Arc runs the Cancun opcodes: TSTORE/TLOAD (EIP-1153), MCOPY (EIP-5656) and
+# PUSH0 (EIP-3855) all work, so "cancun" is a safe target and it unblocks any
+# dependency that needs transient storage. Gas on Arc is USDC and cheap, so
+# there is no reason to hold back to an older instruction set.
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 gas_reports = ["NanoChannel", "SpendGuard", "ServiceRegistry"]
 
 [profile.default.fuzz]
 runs = 512
+
+[profile.default.invariant]
+runs = 128
+depth = 64
+fail_on_revert = false
 
 [rpc_endpoints]
 arc_testnet = "${ARC_RPC_URL}"

@@ -117,8 +117,8 @@ def main() -> int:
     print(f"  burner        {sender}")
     print(f"  mint recipient {recipient}")
     print(f"  mint submitter {destination_account.address if destination_account else '(none)'}")
-    print(f"  TokenMessenger {cctp.TOKEN_MESSENGER_V2}")
-    print(f"  Transmitter    {cctp.MESSAGE_TRANSMITTER_V2}")
+    print(f"  TokenMessenger {source.token_messenger}")
+    print(f"  Transmitter    {destination.message_transmitter}")
     print(f"  Iris           {bridge.iris.base_url}")
 
     print("\nroute, read from the chains themselves")

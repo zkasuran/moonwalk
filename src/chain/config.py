@@ -22,6 +22,17 @@ ARC_RPC_URL = os.getenv("ARC_RPC_URL", "https://rpc.testnet.arc.network")
 ARC_CHAIN_ID = int(os.getenv("ARC_CHAIN_ID", "5042002"))
 ARC_EXPLORER = os.getenv("ARC_EXPLORER", "https://testnet.arcscan.app").rstrip("/")
 
+# CAIP-2 network id and the human-readable name a wallet and the UI show. Both are
+# env-driven so a mainnet deployment (ARC_CHAIN_ID=5042) reads "Arc" instead of
+# telling a payer "testnet". The default keeps a fresh clone on testnet.
+ARC_NETWORK = os.getenv("ARC_NETWORK", f"eip155:{ARC_CHAIN_ID}")
+ARC_NETWORK_NAME = os.getenv("ARC_NETWORK_NAME", "Arc Testnet")
+
+# Arc pays gas in USDC through an 18-decimal native balance, while the ERC-20 view
+# is 6. A wallet adding the network needs the native (18) figure: quoting 6 there
+# is the classic Arc decimals bug.
+ARC_NATIVE_DECIMALS = 18
+
 USDC_ADDRESS = os.getenv("ARC_USDC_ADDRESS", "0x3600000000000000000000000000000000000000")
 USDC_DOMAIN_NAME = os.getenv("ARC_USDC_NAME", "USDC")
 USDC_DOMAIN_VERSION = os.getenv("ARC_USDC_VERSION", "2")

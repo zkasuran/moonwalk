@@ -6,6 +6,7 @@ Shows command details, price, and a MetaMask EIP-3009 pay button.
 
 from __future__ import annotations
 
+from ..chain import config as chain_config
 from ..domain.models import PaymentRecord
 
 
@@ -19,10 +20,17 @@ def build_payment_page(
     args_display = ", ".join(f"{k}={v}" for k, v in record.command_args.items())
     execute_url = f"{base_url}/execute/{record.payment_id}"
     status_url = f"{base_url}/status/{record.payment_id}"
-    network_id = requirements.get("network", "eip155:5042002")
+    network_id = requirements.get("network", chain_config.ARC_NETWORK)
     asset = requirements.get("asset", "")
     pay_to = requirements.get("payTo", "")
     amount = requirements.get("maxAmountRequired", str(record.price_atomic))
+    # The network the payer's wallet is told to add. All of it comes from config so
+    # a mainnet page never says "testnet" and never quotes the wrong native
+    # decimals: Arc's native gas balance is 18 decimals, not the 6 of the ERC-20.
+    chain_name = chain_config.ARC_NETWORK_NAME
+    rpc_url = chain_config.ARC_RPC_URL
+    explorer_url = chain_config.ARC_EXPLORER
+    native_decimals = chain_config.ARC_NATIVE_DECIMALS
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -58,7 +66,7 @@ def build_payment_page(
   <p class="sub">Pay to run a premium command</p>
 
   <div class="arc-badge">
-    <span>&#9679;</span> Arc Testnet &nbsp;&#183;&nbsp; x402 EIP-3009
+    <span>&#9679;</span> {chain_name} &nbsp;&#183;&nbsp; x402 EIP-3009
   </div>
 
   <div class="row">
@@ -87,13 +95,17 @@ def build_payment_page(
   <div class="status" id="status-box"></div>
 
   <p style="font-size:0.72rem;color:#444;margin-top:16px;text-align:center">
-    Powered by <strong>x402</strong> on Arc Testnet (chain {network_id.split(":")[-1]})
+    Powered by <strong>x402</strong> on {chain_name} (chain {network_id.split(":")[-1]})
   </p>
 </div>
 
 <script>
 const NETWORK = "{network_id}";
 const CHAIN_ID = {int(network_id.split(":")[-1])};
+const CHAIN_NAME = "{chain_name}";
+const RPC_URL = "{rpc_url}";
+const EXPLORER_URL = "{explorer_url}";
+const NATIVE_DECIMALS = {native_decimals};
 const ASSET = "{asset}";
 const PAY_TO = "{pay_to}";
 const AMOUNT = "{amount}";
@@ -118,10 +130,10 @@ async function switchToArc() {{
         method: "wallet_addEthereumChain",
         params: [{{
           chainId: "0x" + CHAIN_ID.toString(16),
-          chainName: "Arc Testnet",
-          nativeCurrency: {{ name: "USDC", symbol: "USDC", decimals: 6 }},
-          rpcUrls: ["https://rpc.testnet.arc.network"],
-          blockExplorerUrls: ["https://testnet.arcscan.app"],
+          chainName: CHAIN_NAME,
+          nativeCurrency: {{ name: "USDC", symbol: "USDC", decimals: NATIVE_DECIMALS }},
+          rpcUrls: [RPC_URL],
+          blockExplorerUrls: [EXPLORER_URL],
         }}],
       }});
     }}
@@ -177,7 +189,7 @@ async function payWithMetaMask() {{
   try {{
     const accounts = await ethereum.request({{ method: "eth_requestAccounts" }});
     const from = accounts[0];
-    showStatus("Switching to Arc Testnet...", "info");
+    showStatus("Switching to " + CHAIN_NAME + "...", "info");
     await switchToArc();
 
     const now = Math.floor(Date.now() / 1000);

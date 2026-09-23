@@ -56,6 +56,12 @@ class GuardClient:
     def set_default_cap(
         self, owner: LocalAccount, scope: bytes, limit_atomic: int, window_seconds: int
     ) -> SentTx:
+        """Change the default cap for everyone without their own.
+
+        The opening default cap is now set atomically when the channel opens (the
+        signed Open struct carries capLimit/capWindow, and registerScope applies
+        them), so this is for later changes to that default, not the first one.
+        """
         call = self.client.guard.functions.setDefaultCap(
             self.app, scope, limit_atomic, window_seconds
         )

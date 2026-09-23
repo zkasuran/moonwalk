@@ -52,6 +52,21 @@ _RECEIVE_AUTH_TYPE = [
     {"name": "nonce", "type": "bytes32"},
 ]
 
+# The second payer signature open() now needs. `deposit` is the EIP-3009 auth
+# value and `authNonce` its nonce, so the Open signature binds the channel
+# parameters and the opening cap to the exact authorization that funds them. The
+# field order here is the contract's, byte for byte.
+_OPEN_TYPE = [
+    {"name": "service", "type": "address"},
+    {"name": "salt", "type": "bytes32"},
+    {"name": "guarded", "type": "bool"},
+    {"name": "capOwner", "type": "address"},
+    {"name": "deposit", "type": "uint256"},
+    {"name": "capLimit", "type": "uint256"},
+    {"name": "capWindow", "type": "uint64"},
+    {"name": "authNonce", "type": "bytes32"},
+]
+
 
 def random_nonce() -> bytes:
     """EIP-3009 nonces are random bytes32, not a counter, so two authorizations
@@ -102,6 +117,12 @@ _DOMAIN_TYPEHASH = keccak(
 )
 _VOUCHER_TYPEHASH = keccak(
     text="Voucher(bytes32 channelId,bytes32 subject,uint256 cumulative,uint64 validBefore)"
+)
+_OPEN_TYPEHASH = keccak(
+    text=(
+        "Open(address service,bytes32 salt,bool guarded,address capOwner,"
+        "uint256 deposit,uint256 capLimit,uint64 capWindow,bytes32 authNonce)"
+    )
 )
 
 
@@ -204,6 +225,33 @@ class ChannelClient:
         to agree."""
         return bytes(self.client.channel.functions.voucherHash(voucher.as_tuple()).call())
 
+    def open_hash_onchain(
+        self,
+        service: str,
+        salt: bytes,
+        guarded: bool,
+        cap_owner: str,
+        deposit: int,
+        cap_limit: int,
+        cap_window: int,
+        auth_nonce: bytes,
+    ) -> bytes:
+        """The Open digest the contract will check, mirroring voucher_hash_onchain.
+        Comparing it against open_hash_local proves the two EIP-712 encodings agree
+        rather than trusting both to be right."""
+        return bytes(
+            self.client.channel.functions.openHash(
+                Web3.to_checksum_address(service),
+                salt,
+                guarded,
+                Web3.to_checksum_address(cap_owner),
+                deposit,
+                cap_limit,
+                cap_window,
+                auth_nonce,
+            ).call()
+        )
+
     def close_hash_onchain(self, channel_id: bytes, redeemed: int) -> bytes:
         return bytes(self.client.channel.functions.closeHash(channel_id, redeemed).call())
 
@@ -254,6 +302,52 @@ class ChannelClient:
                     voucher.subject,
                     voucher.cumulative,
                     voucher.valid_before,
+                ],
+            )
+        )
+        return keccak(b"\x19\x01" + self.domain_separator_local() + struct_hash)
+
+    def open_hash_local(
+        self,
+        service: str,
+        salt: bytes,
+        guarded: bool,
+        cap_owner: str,
+        deposit: int,
+        cap_limit: int,
+        cap_window: int,
+        auth_nonce: bytes,
+    ) -> bytes:
+        """The Open digest we sign, rebuilt from the EIP-712 spec, no contract call.
+
+        `deposit` is the EIP-3009 auth value and `auth_nonce` its nonce, so the
+        signature ties the channel parameters and the opening cap to the exact
+        authorization that funds the deposit. Compare against open_hash_onchain and
+        a mismatch is a failed assertion here, not an open() that reverts on chain.
+        """
+        struct_hash = keccak(
+            abi_encode(
+                [
+                    "bytes32",
+                    "address",
+                    "bytes32",
+                    "bool",
+                    "address",
+                    "uint256",
+                    "uint256",
+                    "uint64",
+                    "bytes32",
+                ],
+                [
+                    _OPEN_TYPEHASH,
+                    Web3.to_checksum_address(service),
+                    salt,
+                    guarded,
+                    Web3.to_checksum_address(cap_owner),
+                    deposit,
+                    cap_limit,
+                    cap_window,
+                    auth_nonce,
                 ],
             )
         )
@@ -338,6 +432,39 @@ class ChannelClient:
         signed = payer.sign_message(encode_typed_data(full_message=full))
         return bytes(signed.signature)
 
+    def sign_open(
+        self,
+        payer: LocalAccount,
+        service: str,
+        salt: bytes,
+        guarded: bool,
+        cap_owner: str,
+        deposit: int,
+        cap_limit: int,
+        cap_window: int,
+        auth_nonce: bytes,
+    ) -> bytes:
+        """Sign the Open struct, the second payer signature open() needs. It binds
+        the channel parameters and the opening cap to the authorization that funds
+        the deposit, so a gasless payer opens a guarded channel that is spendable."""
+        full: dict[str, Any] = {
+            "types": {"EIP712Domain": _EIP712_DOMAIN, "Open": _OPEN_TYPE},
+            "primaryType": "Open",
+            "domain": self._channel_domain(),
+            "message": {
+                "service": Web3.to_checksum_address(service),
+                "salt": salt,
+                "guarded": guarded,
+                "capOwner": Web3.to_checksum_address(cap_owner),
+                "deposit": deposit,
+                "capLimit": cap_limit,
+                "capWindow": cap_window,
+                "authNonce": auth_nonce,
+            },
+        }
+        signed = payer.sign_message(encode_typed_data(full_message=full))
+        return bytes(signed.signature)
+
     def sign_close(self, signer: LocalAccount, channel_id: bytes, redeemed: int) -> bytes:
         """Agree that `redeemed` is the final figure. Both sides sign the same
         digest, so neither can close on a stale number."""
@@ -377,21 +504,49 @@ class ChannelClient:
     def open(
         self,
         submitter: LocalAccount,
+        payer: LocalAccount,
         service: str,
         salt: bytes,
         guarded: bool,
         auth: Authorization,
+        cap_limit: int,
+        cap_window: int,
         cap_owner: str | None = None,
     ) -> tuple[bytes, SentTx]:
-        """Open and fund. `cap_owner` administers the caps; leave it unset and the
-        payer owns them, which only works if the payer is willing to send a
-        transaction."""
+        """Open and fund a channel.
+
+        The payer now signs twice: the EIP-3009 authorization that funds the
+        deposit (already inside `auth`) and the Open struct, which binds the
+        channel parameters and the opening cap. `cap_limit`/`cap_window` are that
+        opening default cap, set atomically as the channel opens: a guarded channel
+        opened by a gasless payer has to carry a usable signed cap or it is funded
+        but unspendable. `cap_owner` administers later cap changes; leave it unset
+        and the payer owns them, which only works if the payer will send a
+        transaction.
+        """
+        if payer.address.lower() != auth.payer.lower():
+            raise ValueError("open() payer does not match the authorization's payer")
+        cap_owner_address = Web3.to_checksum_address(cap_owner) if cap_owner else _ZERO_ADDRESS
+        open_signature = self.sign_open(
+            payer,
+            service,
+            salt,
+            guarded,
+            cap_owner_address,
+            auth.value,
+            cap_limit,
+            cap_window,
+            auth.nonce,
+        )
         call = self.client.channel.functions.open(
             Web3.to_checksum_address(service),
             salt,
             guarded,
-            Web3.to_checksum_address(cap_owner) if cap_owner else _ZERO_ADDRESS,
+            cap_owner_address,
+            cap_limit,
+            cap_window,
             auth.as_tuple(),
+            open_signature,
         )
         sent = self.client.send(submitter, call)
         return self.channel_id(auth.payer, service, salt), sent

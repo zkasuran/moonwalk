@@ -18,18 +18,38 @@ contract SpendGuardTest is Test {
     function setUp() public {
         guard = new SpendGuard();
         vm.warp(1_700_000_000);
-        guard.registerScope(SCOPE, owner); // this test contract is the "app"
+        guard.registerScope(SCOPE, owner, 0, 0); // this test contract is the "app"
     }
 
     function test_ScopeIsClaimedOnceAndOwnedByTheNamedOwner() public {
         assertEq(guard.scopeOwner(address(this), SCOPE), owner);
         vm.expectRevert(SpendGuard.ScopeTaken.selector);
-        guard.registerScope(SCOPE, other);
+        guard.registerScope(SCOPE, other, 0, 0);
     }
 
     function test_RegisterScopeRejectsZeroOwner() public {
         vm.expectRevert(SpendGuard.ZeroOwner.selector);
-        guard.registerScope(keccak256("another"), address(0));
+        guard.registerScope(keccak256("another"), address(0), 0, 0);
+    }
+
+    /// registerScope writes the opening default cap in the same call, so a scope
+    /// is usable the moment it is claimed with no separate setDefaultCap. This is
+    /// what lets a guarded channel work for a payer that never transacts.
+    function test_RegisterScopeSetsTheOpeningDefaultCap() public {
+        bytes32 scope = keccak256("opening-cap");
+        vm.expectEmit(true, true, false, true, address(guard));
+        emit SpendGuard.DefaultCapSet(address(this), scope, 5_000, 1 days);
+        guard.registerScope(scope, owner, 5_000, 1 days);
+
+        (uint256 limit, uint64 window, bool set) = guard.capOf(address(this), scope, ALICE);
+        assertEq(limit, 5_000);
+        assertEq(window, 1 days);
+        assertTrue(set, "the opening cap is in force at registration");
+
+        // Spendable up to the cap with no follow-up transaction.
+        guard.consume(scope, ALICE, 5_000);
+        vm.expectRevert(abi.encodeWithSelector(SpendGuard.CapExceeded.selector, ALICE, 5_000, 1, 5_000));
+        guard.consume(scope, ALICE, 1);
     }
 
     function test_OnlyTheScopeOwnerSetsCaps() public {
@@ -42,12 +62,14 @@ contract SpendGuardTest is Test {
         guard.setSubjectCap(address(this), SCOPE, ALICE, 100, 0);
     }
 
-    function test_UnconfiguredScopeSpendsNothing() public {
+    function test_UnregisteredScopeSpendsNothing() public {
+        // A scope this app never registered has no cap, so it fails closed.
+        bytes32 unreg = keccak256("never-registered");
         vm.expectRevert(
-            abi.encodeWithSelector(SpendGuard.NotConfigured.selector, address(this), SCOPE, ALICE)
+            abi.encodeWithSelector(SpendGuard.NotConfigured.selector, address(this), unreg, ALICE)
         );
-        guard.consume(SCOPE, ALICE, 1);
-        assertEq(guard.remaining(address(this), SCOPE, ALICE), 0);
+        guard.consume(unreg, ALICE, 1);
+        assertEq(guard.remaining(address(this), unreg, ALICE), 0);
     }
 
     function test_ExplicitZeroCapBlocksSpendButIsConfigured() public {
@@ -144,7 +166,7 @@ contract SpendGuardCaller {
     }
 
     function register(bytes32 scope, address owner) external {
-        guard.registerScope(scope, owner);
+        guard.registerScope(scope, owner, 0, 0);
     }
 
     function consume(bytes32 scope, bytes32 subject, uint256 amount) external {

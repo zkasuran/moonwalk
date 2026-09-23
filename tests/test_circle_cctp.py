@@ -123,7 +123,7 @@ def test_finality_has_exactly_two_levels() -> None:
 
 def test_unknown_chain_names_the_ones_it_knows() -> None:
     with pytest.raises(KeyError) as caught:
-        cctp.chain("arc-mainnet")
+        cctp.chain("arc-devnet")
     assert "arc-testnet" in str(caught.value)
 
 

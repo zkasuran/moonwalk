@@ -39,7 +39,13 @@ GATEWAY_API_MAINNET = "https://gateway-api.circle.com"
 GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
 GATEWAY_MINTER = "0x0022222ABE238Cc2C7Bb1f21003F0a260052475B"
 
-# Arc's Gateway domain, the same number CCTP uses.
+# Mainnet Gateway contracts on Arc (chain 5042). Both verified with `cast code` on
+# 2026-09-23: each carries bytecode. The mainnet addresses differ from the testnet
+# ones above, so a mainnet reader pairs GATEWAY_API_MAINNET with these.
+GATEWAY_WALLET_MAINNET = "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"
+GATEWAY_MINTER_MAINNET = "0x2222222d7164433c4C09B0b0D809a9b52C04C205"
+
+# Arc's Gateway domain, the same number CCTP uses. Mainnet and testnet share it.
 ARC_DOMAIN = 26
 
 AVAILABLE_BALANCE = "availableBalance(address,address)"

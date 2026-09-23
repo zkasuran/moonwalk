@@ -39,6 +39,10 @@ VALID_BEFORE = 1_800_000_000  # a fixed timestamp, so nothing here reads a clock
 DOMAIN_TYPE = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
 VOUCHER_TYPE = "Voucher(bytes32 channelId,bytes32 subject,uint256 cumulative,uint64 validBefore)"
 CLOSE_TYPE = "Close(bytes32 channelId,uint256 redeemed)"
+OPEN_TYPE = (
+    "Open(address service,bytes32 salt,bool guarded,address capOwner,"
+    "uint256 deposit,uint256 capLimit,uint64 capWindow,bytes32 authNonce)"
+)
 DOMAIN_NAME = "MoonWalk NanoChannel"
 DOMAIN_VERSION = "1"
 
@@ -92,6 +96,39 @@ def voucher_digest(voucher: Voucher, chain_id: int, contract: str) -> bytes:
 
 def close_digest(channel_id: bytes, redeemed: int, chain_id: int, contract: str) -> bytes:
     struct_hash = keccak256(keccak256(CLOSE_TYPE.encode()) + channel_id + word(redeemed))
+    return keccak256(b"\x19\x01" + domain_separator(chain_id, contract) + struct_hash)
+
+
+def bool_word(flag: bool) -> bytes:
+    """A bool in an ABI word: 31 zero bytes then 0x00 or 0x01."""
+    return bytes(31) + (b"\x01" if flag else b"\x00")
+
+
+def open_digest(
+    service: str,
+    salt: bytes,
+    guarded: bool,
+    cap_owner: str,
+    deposit: int,
+    cap_limit: int,
+    cap_window: int,
+    auth_nonce: bytes,
+    chain_id: int,
+    contract: str,
+) -> bytes:
+    """The Open digest a payer signs, derived here from the spec. The field order
+    is the one thing that must match NanoChannel.sol, so it is spelled out again."""
+    struct_hash = keccak256(
+        keccak256(OPEN_TYPE.encode())
+        + address_word(service)
+        + salt
+        + bool_word(guarded)
+        + address_word(cap_owner)
+        + word(deposit)
+        + word(cap_limit)
+        + word(cap_window)
+        + auth_nonce
+    )
     return keccak256(b"\x19\x01" + domain_separator(chain_id, contract) + struct_hash)
 
 
@@ -252,6 +289,172 @@ def test_close_signature_is_pinned_to_the_redeemed_total(channel: ChannelClient)
     for_thirty = channel.sign_close(PAYER, CHANNEL_ID, REDEEMED)
     for_thirty_one = channel.sign_close(PAYER, CHANNEL_ID, REDEEMED + 1)
     assert for_thirty != for_thirty_one
+
+
+# ---- the open authorization -----------------------------------------------
+# open() takes a second payer signature over the whole channel configuration, so
+# a submitter cannot flip `guarded` or `capOwner` on the channel the payer meant
+# to open. The digest that signature covers has to agree with NanoChannel.sol, so
+# it is rebuilt here from the spec exactly as the voucher digest is.
+
+OPEN_SALT = keccak256(b"open salt")
+OPEN_CAP_OWNER = SERVICE.address
+OPEN_DEPOSIT = 100_000
+OPEN_CAP_LIMIT = 5_000
+OPEN_CAP_WINDOW = 86_400
+
+
+def test_open_digest_matches_the_spec(channel: ChannelClient) -> None:
+    local = channel.open_hash_local(
+        SERVICE.address,
+        OPEN_SALT,
+        True,
+        OPEN_CAP_OWNER,
+        OPEN_DEPOSIT,
+        OPEN_CAP_LIMIT,
+        OPEN_CAP_WINDOW,
+        NONCE,
+    )
+    assert len(local) == 32
+    assert local == open_digest(
+        SERVICE.address,
+        OPEN_SALT,
+        True,
+        OPEN_CAP_OWNER,
+        OPEN_DEPOSIT,
+        OPEN_CAP_LIMIT,
+        OPEN_CAP_WINDOW,
+        NONCE,
+        CHAIN_ID,
+        channel.address,
+    )
+
+
+def test_open_digest_covers_every_field(channel: ChannelClient) -> None:
+    # Flipping any signed field must change the digest, else a submitter could
+    # alter that field without invalidating the signature.
+    base = (
+        SERVICE.address,
+        OPEN_SALT,
+        True,
+        OPEN_CAP_OWNER,
+        OPEN_DEPOSIT,
+        OPEN_CAP_LIMIT,
+        OPEN_CAP_WINDOW,
+        NONCE,
+    )
+    variants = [
+        (
+            PAYER.address,
+            OPEN_SALT,
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            keccak256(b"other salt"),
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            False,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            True,
+            PAYER.address,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT + 1,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT + 1,
+            OPEN_CAP_WINDOW,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW + 1,
+            NONCE,
+        ),
+        (
+            SERVICE.address,
+            OPEN_SALT,
+            True,
+            OPEN_CAP_OWNER,
+            OPEN_DEPOSIT,
+            OPEN_CAP_LIMIT,
+            OPEN_CAP_WINDOW,
+            keccak256(b"other nonce"),
+        ),
+    ]
+    digests = {channel.open_hash_local(*args) for args in [base, *variants]}
+    assert len(digests) == len(variants) + 1
+
+
+def test_sign_open_recovers_to_the_payer(channel: ChannelClient) -> None:
+    digest = open_digest(
+        SERVICE.address,
+        OPEN_SALT,
+        True,
+        OPEN_CAP_OWNER,
+        OPEN_DEPOSIT,
+        OPEN_CAP_LIMIT,
+        OPEN_CAP_WINDOW,
+        NONCE,
+        CHAIN_ID,
+        channel.address,
+    )
+    signature = channel.sign_open(
+        PAYER,
+        SERVICE.address,
+        OPEN_SALT,
+        True,
+        OPEN_CAP_OWNER,
+        OPEN_DEPOSIT,
+        OPEN_CAP_LIMIT,
+        OPEN_CAP_WINDOW,
+        NONCE,
+    )
+    assert len(signature) == 65
+    assert recover(digest, signature) == PAYER.address
 
 
 def test_the_offline_paths_never_reach_the_rpc(channel: ChannelClient, voucher: Voucher) -> None:

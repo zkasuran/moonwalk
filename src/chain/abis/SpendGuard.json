@@ -74,6 +74,16 @@
         "name": "owner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "defaultLimit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "defaultWindow",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],
