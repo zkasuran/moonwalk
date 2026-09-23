@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moonwalk-nanopay"
+version = "0.1.0"
+description = "Python SDK for the MoonWalk USDC payment channel on Arc mainnet. Sign vouchers off-chain, settle in batches."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["arc", "usdc", "payment-channel", "eip-3009", "eip-712", "web3", "moonwalk"]
+authors = [{ name = "zkasuran" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+dependencies = [
+    "web3>=7",
+    "eth-account>=0.13",
+    "eth-abi>=5",
+    "eth-utils>=4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "mypy>=1.8",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://explorer.arc.io/address/0x059D3A87E91fA91D341f364868A9Ed333077989a"
+
+[tool.hatch.build.targets.wheel]
+packages = ["moonwalk_nanopay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+exclude = ['\.venv']
