@@ -1,0 +1,52 @@
+{
+  "name": "@moonwalk/nanopay",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the MoonWalk USDC payment channel on Arc mainnet. Sign vouchers off-chain, settle in batches.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "example:read-live": "tsx examples/read-live.ts"
+  },
+  "keywords": [
+    "arc",
+    "usdc",
+    "payment-channel",
+    "eip-3009",
+    "eip-712",
+    "viem",
+    "moonwalk"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "viem": "2.21.55"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}
