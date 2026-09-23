@@ -35,3 +35,6 @@ CONTENT-*.html
 # Internal lane drafts that live beside the clone, never published in the repo
 CIRCLE-GRANT-APPLICATION.html
 POST-ARC-COMMUNITY-*.html
+
+# Submission form-fills carry PII and form internals, never push them.
+/submit/
