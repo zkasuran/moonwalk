@@ -13,7 +13,7 @@ import type { Authorization, Voucher } from "./types.js";
  * The EIP-712 typed-data builders. One per struct the contracts check.
  *
  * These are the single source of truth for what gets signed. The signing
- * functions pass them to signTypedData, and the digest functions pass the same
+ * functions pass them to signTypedData and the digest functions pass the same
  * object to hashTypedData, so a signature and its digest can never drift.
  */
 

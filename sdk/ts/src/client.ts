@@ -307,7 +307,7 @@ export class NanopayClient {
 
   /**
    * Open and fund a channel. Signs the two things the payer must sign: the
-   * EIP-3009 ReceiveWithAuthorization that moves the deposit, and the Open
+   * EIP-3009 ReceiveWithAuthorization that moves the deposit plus the Open
    * struct that binds every channel parameter and the opening cap. Returns both
    * signatures, the derived channel id and a ready transaction. Submitting it is
    * anyone's job, so hand { to, data } to a relayer or call submit().
@@ -421,7 +421,7 @@ export class NanopayClient {
         const wallet = this.walletClient;
         if (!wallet) {
           throw new Error(
-            "NanopayClient has no wallet client. Use the returned { to, data } with your own relayer, or construct the client with a walletClient.",
+            "NanopayClient has no wallet client. Use the returned { to, data } with your own relayer or construct the client with a walletClient.",
           );
         }
         if (!wallet.account) {

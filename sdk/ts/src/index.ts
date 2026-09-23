@@ -3,8 +3,8 @@
  *
  * A TypeScript SDK for the MoonWalk USDC payment channel on Arc mainnet. Sign
  * off-chain, settle in batches. The payer signs everything and sends no
- * transaction. Whoever wants the money on-chain submits, and on Arc they pay
- * that gas in the same USDC they are collecting.
+ * transaction. Whoever wants the money on-chain submits. On Arc they pay that
+ * gas in the same USDC they are collecting.
  */
 
 export {

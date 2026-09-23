@@ -30,7 +30,7 @@ export const arcMainnet = defineChain({
   },
 });
 
-/** USDC uses 6 decimals for its ERC-20 view, and so does every amount here. */
+/** USDC uses 6 decimals for its ERC-20 view and so does every amount here. */
 export const USDC_DECIMALS = 6;
 
 /** Live Arc mainnet addresses. Verified against deployments/arc-mainnet.json. */

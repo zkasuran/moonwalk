@@ -10,7 +10,7 @@ import type { Authorization, Voucher } from "./types.js";
 
 /**
  * Anything that can sign EIP-712 typed data for the payer. A viem local account
- * from privateKeyToAccount satisfies this, and so does a wallet client's
+ * from privateKeyToAccount satisfies this and so does a wallet client's
  * signTypedData. The payer signs everything and sends no transaction.
  */
 export interface TypedDataSigner {

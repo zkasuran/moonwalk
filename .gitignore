@@ -38,3 +38,7 @@ POST-ARC-COMMUNITY-*.html
 
 # Submission form-fills carry PII and form internals, never push them.
 /submit/
+
+# Demo video render outputs and upload packages live beside the build, never in the code repo.
+DEMO-*.mp4
+upload-*/

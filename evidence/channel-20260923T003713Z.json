@@ -1,5 +1,5 @@
 {
-  "network": "arc-testnet",
+  "network": "arc-mainnet",
   "chainId": 5042,
   "steps": [
     {

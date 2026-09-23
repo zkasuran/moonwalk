@@ -64,7 +64,10 @@ def main() -> int:
 
     payer = ArcClient.account(agent_key)  # signs, never sends a transaction
     service = ArcClient.account(ops_key)  # receives the USDC, submits, pays gas
-    evidence: dict[str, Any] = {"network": "arc-testnet", "chainId": client.chain_id, "steps": []}
+    # The network label comes from the chain id so the evidence file cannot claim
+    # testnet on a mainnet run. Arc mainnet is 5042, testnet is 5042002.
+    network = "arc-mainnet" if client.chain_id == 5042 else "arc-testnet"
+    evidence: dict[str, Any] = {"network": network, "chainId": client.chain_id, "steps": []}
 
     def record(name: str, **fields: Any) -> None:
         evidence["steps"].append({"step": name, **fields})
