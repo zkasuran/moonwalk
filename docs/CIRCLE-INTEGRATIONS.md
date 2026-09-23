@@ -1,13 +1,13 @@
 # Circle integrations in MoonWalk
 
-What is wired in, what is deliberately not, and the receipts for both. Everything
+What is wired in, what is deliberately not and the receipts for both. Everything
 below was run against Circle's live testnet APIs and Arc testnet on 2026-07-29
 from this repo. Where something could not be established it says UNVERIFIED and no
 number is invented.
 
 MoonWalk already ran on Circle rails: USDC on Arc, EIP-3009 gasless
 authorizations, x402 for the HTTP half. What was missing was Circle's own SDKs and
-services. Two are now in, one is read-only on purpose, and three were rejected
+services. Two are now in, one is read-only on purpose and three were rejected
 with evidence.
 
 | Circle product | Status | Code |
@@ -17,11 +17,11 @@ with evidence.
 | Gateway (balances, wallet state) | read only, by choice | `src/circle/gateway.py` |
 | Gateway Nanopayments rail | not built, reasoned below | none |
 | Faucet API (`/v1/faucet/drips`) | blocked for our key, HTTP 403 | none |
-| Paymaster | not deployed on Arc, and pointless there | none |
+| Paymaster | not deployed on Arc and pointless there | none |
 | StableFX | permissioned, no public call shapes | none |
 
 Offline tests: `tests/test_circle_wallets.py` (20) and `tests/test_circle_cctp.py`
-(35). They never touch a network. `make test` is 199 passing, `make lint` is clean
+(35). They never touch a network. `make test` is 210 passing, `make lint` is clean
 (ruff, ruff format, mypy strict on `src/`).
 
 ## 1. Circle developer-controlled wallets as the agent's signer
@@ -36,7 +36,7 @@ two backends behind it:
   holds it. Signing is `POST /v1/w3s/developer/sign/typedData`.
 
 That is the honest path to production for an agent that spends money: custody is
-Circle's, access is an API credential you can rotate, and a leaked clone of the
+Circle's, access is an API credential you can rotate and a leaked clone of the
 repo does not leak the wallet.
 
 ### What was proven, live
@@ -62,7 +62,7 @@ encoder: `NanoChannel.voucherHash()` on Arc returned
 what we built locally and handed to Circle.
 
 **Arc USDC accepts the wallet's EIP-3009 signature.** Circle signed a
-`TransferWithAuthorization`, and the relayer submitted it. USDC moved out of the
+`TransferWithAuthorization` and the relayer submitted it. USDC moved out of the
 Circle-custodied wallet with the wallet sending no transaction and paying no gas:
 
 | Step | Tx | Result |
@@ -79,23 +79,23 @@ The wallet's transaction count was 0 before and 0 after. Full record:
 reasons that are about this product rather than about Circle:
 
 1. A metered rail signs a voucher per call. Local signing is microseconds, a Circle
-   signature is an HTTPS round trip, and Circle requires the entity secret to be
+   signature is an HTTPS round trip and Circle requires the entity secret to be
    re-encrypted for every request. On a nanopayment path that latency is the
    product.
 2. Signing is only half of custody. Submitting a settlement still needs a key that
    can send a transaction. Circle's `createDeveloperTransactionContractExecution`
-   would cover that, and it is not wired here, so a Circle-only deployment would
+   would cover that and it is not wired here, so a Circle-only deployment would
    still need a local relayer key. Saying so is more useful than pretending the
    whole rail is custodied.
 
 UNVERIFIED for this integration: wallet creation through the API (we used an
 existing wallet), `signTransaction` and the contract-execution transaction API, SCA
-or MSCA account types, and anything on Arc mainnet, which does not exist yet.
+or MSCA account types and anything on Arc mainnet, which does not exist yet.
 
 ## 2. CCTP V2: the agent refills its own Arc balance
 
 The agent spends USDC on Arc and pays gas in the same USDC. When the balance falls
-under a threshold it has to top itself up, and CCTP V2 is the first-party way to do
+under a threshold it has to top itself up and CCTP V2 is the first-party way to do
 it. `src/circle/cctp.py` implements the whole flow in raw calldata so a dry run can
 show exactly what would be broadcast:
 
@@ -134,7 +134,7 @@ contracts before anything is signed:
 ```
 
 A revert comes back as the contract's own words rather than as "execution
-reverted", and when the destination balance is already above the threshold the plan
+reverted" and when the destination balance is already above the threshold the plan
 builds no calldata at all and says so. Both dry runs are recorded in
 `evidence/cctp-dryrun-20260729T1720*.json`.
 
@@ -186,7 +186,7 @@ Record: `evidence/cctp-live-20260729T170513Z.json`.
 ### Three things worth knowing that the docs do not spell out
 
 **The attested message is not the message you emitted.** Comparing Iris's `message`
-with the `MessageSent` log byte for byte fails, and not because anything is wrong.
+with the `MessageSent` log byte for byte fails and not because anything is wrong.
 CCTP V2 fills in four fields at attestation time that are zero in the event: the
 nonce (12..44), `finalityThresholdExecuted` (144..148), `feeExecuted` (312..344) and
 `expirationBlock` (344..376). Measured on both live transfers, nothing else moved.
@@ -200,7 +200,7 @@ Arc finalises in one block, so there is nothing to wait for.
 **Fees, read from the message rather than guessed.** Iris quotes basis points and
 they are not always whole: `GET /v2/burn/USDC/fees/26/0` is 0 bps Fast, `.../0/26` is
 1 bps and `.../6/26` is 1.3, so the fee is computed with a ceiling and a 25 percent
-buffer, and `maxFee` never sits under Iris's minimum. On the $0.50 refill Circle
+buffer and `maxFee` never sits under Iris's minimum. On the $0.50 refill Circle
 charged 50 atomic units of the 63 allowed. On Arc the mint gas comes out of the same
 USDC balance, which is why the recipient's balance moved less than the mint when the
 submitter and the recipient were the same wallet.
@@ -215,7 +215,7 @@ submitter and the recipient were the same wallet.
 
 ## 3. Gateway Nanopayments next to the MoonWalk channel
 
-Gateway Nanopayments is the closest first-party thing to what MoonWalk built, and it
+Gateway Nanopayments is the closest first-party thing to what MoonWalk built and it
 is live on Arc: domain 26, Nanopayments marked Yes in Circle's supported-blockchains
 table, with attestation in about one block (~0.5s), the fastest row in that table.
 So this is not a "Circle does not offer it" comparison. It is a choice.
@@ -256,7 +256,7 @@ the actual reason the channel exists.
 **No deposit into a third party's contract.** A MoonWalk deposit sits in our channel
 contract, pulled in by a `ReceiveWithAuthorization` that only the channel can redeem
 because USDC enforces `to == msg.sender`. A Gateway deposit sits in Circle's
-contract, and the untouched-funds exit is `initiateWithdrawal` followed by a 14 day
+contract and the untouched-funds exit is `initiateWithdrawal` followed by a 14 day
 delay, read from the chain above.
 
 **No TEE in the trust model.** Our settlement is `ecrecover` plus a monotonic
@@ -265,7 +265,7 @@ nothing else. Gateway's netting is correct because an enclave says so and the
 contract trusts that signer. That is a reasonable design and it is a different one.
 
 **A close both sides sign.** Either party can submit the mutually signed final
-figure, and the remainder goes back to the payer in the same transaction.
+figure and the remainder goes back to the payer in the same transaction.
 
 ### Where Gateway is simply better
 
@@ -288,10 +288,10 @@ channel could take a contract-account payer. Untested here, so UNVERIFIED.
 ### Why there is no Gateway rail in this repo
 
 A deposit plus burn intent plus mint path would be a second payment rail that does
-less than the one already shipped, and Gateway's settlement is Circle's service
+less than the one already shipped and Gateway's settlement is Circle's service
 rather than something you self-host, so wiring it means replacing our rail, not
 extending it. Half a payment rail is worse than none. The read paths are here because
-they let this comparison be written from real numbers, and because an operator can
+they let this comparison be written from real numbers and because an operator can
 check a Gateway balance without leaving the codebase.
 
 ## 4. What we deliberately did not use
@@ -314,7 +314,7 @@ rather than by pretending a drip worked.
 
 **Paymaster.** Both shared testnet addresses have no bytecode on Arc
 (`cast code 0x31BE08D3...` and `0x3BA9A96e...` both return `0x`) even though Circle's
-docs list ARC-TESTNET, and on Arc gas is already paid in USDC out of the same balance
+docs list ARC-TESTNET and on Arc gas is already paid in USDC out of the same balance
 the ERC-20 view exposes. Sponsorship on Arc is cheaper as EIP-3009 plus a relayer,
 which is what MoonWalk already does, with no ERC-4337 stack. Adding the dependency
 would have been decoration.
@@ -346,7 +346,7 @@ Environment, appended to `.env.example`: `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET
 `CIRCLE_WALLET_ID`, `CIRCLE_WALLET_ADDRESS`, `MOONWALK_SIGNER`,
 `CCTP_SOURCE_PRIVATE_KEY`, `CCTP_DEST_PRIVATE_KEY`,
 `MOONWALK_REFILL_THRESHOLD_ATOMIC` and the two source-chain RPC overrides. No secret
-value appears in any file in this repo, and neither script prints one.
+value appears in any file in this repo and neither script prints one.
 
 ### If the source chain is empty
 

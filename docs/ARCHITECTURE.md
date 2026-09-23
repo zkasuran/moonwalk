@@ -217,9 +217,9 @@ is the member's own address: the member is paid, the operator carries the gas. T
 first listing in a server claims the namespace and pins the API's $0.01 ceiling as
 `namespaceMaxPrice`, which moves that limit from this service's opinion into the
 contract. Verification needs two things to agree, the caller's Discord permission and
-the namespace admin the contract checks, and the transaction is the record of it.
+the namespace admin the contract checks and the transaction is the record of it.
 
-Writes fail closed and reads degrade. With no signer, or when the contract refuses,
+Writes fail closed and reads degrade. With no signer or when the contract refuses,
 the listing is refused and reported under the contract's own error name rather than
 written to SQLite and called listed. `GET /market/services/{guild}` prefers the chain
 and falls back to this service's mirror when the chain cannot be read, saying which
