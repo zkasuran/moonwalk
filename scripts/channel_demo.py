@@ -33,7 +33,7 @@ from src.chain import ArcClient, ChannelClient, GuardClient, Voucher, discord_su
 from src.chain import config as chain_config  # noqa: E402
 from src.chain.client import revert_name  # noqa: E402
 
-DEPOSIT = 200_000  # $0.20
+DEPOSIT = 100_000  # $0.10
 PRICE = 1_000  # $0.001 per call
 DEFAULT_CAP = 5_000  # $0.005 for anyone without their own cap
 ALICE_CAP = 60_000  # $0.06
