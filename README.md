@@ -146,8 +146,8 @@ runs and are verified on Sourcify (exact match) and the Arc explorer.
 
 The full lifecycle ran on Arc mainnet with real USDC: a channel opened by a
 gasless payer signature, a per-person cap set on-chain, 30 metered calls settled
-in one redeem, an over-cap voucher refused by the contract, and a cooperative
-close returning the remainder. The payer's transaction count was zero before and
+in one redeem, an over-cap voucher refused by the contract and a cooperative close
+returning the remainder. The payer's transaction count was zero before and
 after. Evidence in [`deployments/arc-mainnet.json`](deployments/arc-mainnet.json)
 and `evidence/`.
 
